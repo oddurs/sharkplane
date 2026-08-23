@@ -14,7 +14,7 @@ const STRINGS = {
     r_combo: "You: I could do this all day.", r_frenzy: "You: FEEDING TIME!", r_boss: "Tower: Uh… Shark One, there's a zeppelin. Bon appétit.",
     r_bossDown: "You: Burp. Excuse me.", r_enemySpot: "Enemy: It's behind me! IT'S BEHIND ME!", r_enemyPair: "Enemy: Stay close, wingman— wingman?",
     r_land: "Tower: Nice landing. Did you bring us anything?", r_hungry: "You: Getting peckish up here.", r_starving: "Tower: Shark One, your engine sounds… hungry.",
-    r_crash: "Enemy: I'd rather crash than— oh.", r_wave: "Tower: Fresh batch inbound. Chew with your mouth closed.", r_bird: "You: Snack.",
+    r_crash: "Enemy: I'd rather crash than— oh.", r_playerCrash: "Tower: Shark One… that one's coming out of your pay. New airframe inbound.", r_wave: "Tower: Fresh batch inbound. Chew with your mouth closed.", r_bird: "You: Snack.",
     // tutorial
     t_throttle: "Tower: Hold SHIFT to throttle up and roll down the strip.", t_rotate: "Tower: Past 150 — pull back (S) to rotate.",
     t_find: "Tower: Follow the yellow arrow to your first meal.", t_bite: "Tower: Line the bracket up with your nose and close in. Tap SPACE to lunge.",
@@ -32,7 +32,7 @@ const STRINGS = {
     r_combo: "Þú: Ég gæti gert þetta allan daginn.", r_frenzy: "Þú: MATARTÍMI!", r_boss: "Turn: Ehm… Hákarl eitt, það er loftskip. Verði þér að góðu.",
     r_bossDown: "Þú: Rop. Afsakið.", r_enemySpot: "Óvinur: Hann er fyrir aftan mig! FYRIR AFTAN MIG!", r_enemyPair: "Óvinur: Haltu þig nálægt, vængmaður— vængmaður?",
     r_land: "Turn: Flott lending. Komstu með eitthvað handa okkur?", r_hungry: "Þú: Farinn að verða svangur hérna uppi.", r_starving: "Turn: Hákarl eitt, vélin hljómar… svöng.",
-    r_crash: "Óvinur: Frekar brotlendi ég en— ó.", r_wave: "Turn: Ný sending á leiðinni. Tyggðu með lokaðan munn.", r_bird: "Þú: Snarl.",
+    r_crash: "Óvinur: Frekar brotlendi ég en— ó.", r_playerCrash: "Turn: Hákarl eitt… þetta dregst af laununum. Ný vél á leiðinni.", r_wave: "Turn: Ný sending á leiðinni. Tyggðu með lokaðan munn.", r_bird: "Þú: Snarl.",
     t_throttle: "Turn: Haltu SHIFT til að gefa í og rúlla eftir brautinni.", t_rotate: "Turn: Yfir 150 — togaðu aftur (S) til að lyfta.",
     t_find: "Turn: Fylgdu gulu örinni að fyrstu máltíðinni.", t_bite: "Turn: Stilltu rammann við nefið og nálgastu. Ýttu á SPACE til að stökkva.",
     t_done: "Turn: Þetta er komið. Þú ert náttúrutalent. Hræðilegt, hræðilegt náttúrutalent.",

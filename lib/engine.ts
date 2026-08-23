@@ -122,6 +122,7 @@ export class Engine {
   private camQ = new THREE.Quaternion(); private titleAngle = 0;
   private frameEma = 0.016; private slowFor = 0; private autoDropped = 0;
   private lockRef: object | null = null;
+  private crashTimer = 0; private crashPos = new THREE.Vector3(); private crashYaw = 0;
   private gForce = 0; private lastVel = new THREE.Vector3();
   private tier: Tier = "high";
   private tiltInput: Tilt | null = null;
@@ -280,6 +281,7 @@ export class Engine {
     this.voices.clear();
     this.tutorialStep = store.get().options.tutorialDone ? 99 : 0; this.tutorialTimer = 0;
     this.resumeIn = 0; this.tilt = 0; this.zoomPunch = 0; this.lastRadio.clear();
+    this.crashTimer = 0; this.player.mesh.visible = true;
     store.setHud({ subtitle: null, caption: "", weather: this.rainy ? "rain" : "clear", resumeIn: 0 });
 
     const p = this.player;
@@ -434,12 +436,13 @@ export class Engine {
         ghAhead = Math.max(ghAhead, groundHeight(look.x, look.z));
       }
       const clearance = e.pos.y - ghAhead;
-      if (clearance < 15) {
+      const span = 7 * k.scale; // half wingspan-ish: keep the whole airframe clear, not just the centre
+      if (clearance < 18 + span) {
         // emergency pull-up: forget everything else
         desired = eFwd.clone().setY(0).normalize().multiplyScalar(0.5).setY(1);
         turnRate = k.turn * 3;
-      } else if (clearance < 40) {
-        desired.y += (40 - clearance) / 40 * 1.5 + 0.3;
+      } else if (clearance < 50 + span) {
+        desired.y += (50 + span - clearance) / 50 * 1.5 + 0.3;
         turnRate = Math.max(turnRate, k.turn * 1.5);
       }
       if (e.pos.y > 260) desired.y -= 0.5;
@@ -452,10 +455,14 @@ export class Engine {
       e.roll = THREE.MathUtils.lerp(e.roll, (-yawDelta / Math.max(dt, 1e-4)) * 1.2, dt * 4);
       e.pos.addScaledVector(after, e.speed * (tired ? 0.8 : 1) * dt);
       // hit the ground or the sea: crash
-      const floor = groundHeight(e.pos.x, e.pos.z);
-      const panicking = threatened || e.fleeTimer > 0 || e.spookTimer > 0;
-      if (e.pos.y < floor + 1 && panicking) { this.crash(e, i, true); continue; }
-      if (e.pos.y < floor + 3) e.pos.y = floor + 3; // calm planes skim, never clip
+      // any part of the airframe touching terrain or water is a crash — sample the centre and both wingtips
+      const eRight = RIGHT.clone().applyQuaternion(e.q).multiplyScalar(6 * k.scale);
+      const lowest = Math.min(
+        e.pos.y - groundHeight(e.pos.x, e.pos.z),
+        e.pos.y + eRight.y - groundHeight(e.pos.x + eRight.x, e.pos.z + eRight.z),
+        e.pos.y - eRight.y - groundHeight(e.pos.x - eRight.x, e.pos.z - eRight.z),
+      );
+      if (lowest < 1.2 * k.scale) { this.crash(e, i, threatened || e.fleeTimer > 0 || e.spookTimer > 0); continue; }
       const toE = e.pos.clone().sub(p.pos);
       if (e.biteCooldown <= 0 && dist < 30 && pf.dot(toE.normalize()) > 0.75) e.pos.lerp(mouth, damp(4, dt));
       e.mesh.position.copy(e.pos);
@@ -667,6 +674,11 @@ export class Engine {
 
       if (water && p.pos.y - gh < 4 && p.speed > 30) this.emitDust(dt, 1.5, "splash");
 
+      // wingtips + nose: a real crash if you plough in nose-down or fast; a bounce if you merely skim
+      const pr = RIGHT.clone().applyQuaternion(p.q).multiplyScalar(6);
+      const tipLow = Math.min(p.pos.y + pr.y - groundHeight(p.pos.x + pr.x, p.pos.z + pr.z), p.pos.y - pr.y - groundHeight(p.pos.x - pr.x, p.pos.z - pr.z));
+      const noseDown = f.y < -0.35;
+      if ((p.pos.y < gh + 1.7 && (noseDown || p.speed > 52) && !(onRunway && p.speed < 40)) || tipLow < -1.5) { this.crashPlayer(); return; }
       if (p.pos.y < gh + 1.7) {
         p.pos.y = gh + 1.7;
         this.touchedGroundThisWave = true;
@@ -721,6 +733,40 @@ export class Engine {
       const n = Math.floor(this.streakAcc);
       if (n > 0) { this.streakAcc -= n; this.fx.streak(this.camera.position, FWD.clone().applyQuaternion(p.q), Math.min(n, 3)); }
     }
+  }
+
+  /** You hit the ground for real: airframe shreds, short blackout, respawn in the air nearby. Combo is lost; the clock keeps running. */
+  private crashPlayer() {
+    const p = this.player;
+    this.crashTimer = 2.6;
+    this.crashPos.copy(p.pos);
+    const f = FWD.clone().applyQuaternion(p.q); this.crashYaw = Math.atan2(-f.x, -f.z);
+    if (isWater(p.pos.x, p.pos.z)) { this.fx.splash(p.pos, 30); this.sound?.splash(p.pos); } else { this.fx.slick(p.pos); }
+    this.fx.shred(this.model.parts, p.mesh, 0x5b6b3a, 1.2);
+    p.mesh.visible = false;
+    for (const t of this.trails) t.reset(p.pos); this.contrail.reset(p.pos);
+    this.sound?.crash(p.pos); this.sound?.thud(0.8);
+    this.input.rumble(1, 1, 500);
+    this.shake = 1.4; this.hitStop = 0.12;
+    this.combo = 0; this.comboTimer = 0; this.frenzy = 0; this.post.setTint(new THREE.Color(0xff5d2e), 0);
+    this.touchedGroundThisWave = true;
+    p.speed = 0; p.throttle = 0; this.boosting = false; this.lunge = 0;
+    this.showMsg("CRASHED!");
+    this.radio("r_playerCrash", 5);
+  }
+  private updateCrash(dt: number) {
+    this.crashTimer -= dt;
+    this.post.setTint(new THREE.Color(0x000000), Math.min(1, Math.max(0, (1.6 - this.crashTimer) * 1.2)) * 0.9);
+    if (this.crashTimer > 0) return;
+    // respawn: 80 m up over the crash site, level, heading the same way, with flying speed
+    const p = this.player;
+    p.pos.copy(this.crashPos); p.pos.y = groundHeight(p.pos.x, p.pos.z) + 80;
+    p.q.setFromAxisAngle(UP, this.crashYaw); p.speed = 45; p.throttle = 0.8; p.state = "airborne"; p.gearUp = 1;
+    p.mesh.visible = true; p.mesh.position.copy(p.pos); p.mesh.quaternion.copy(p.q);
+    this.camQ.copy(p.q);
+    for (const t of this.trails) t.reset(p.pos); this.contrail.reset(p.pos);
+    this.post.setTint(new THREE.Color(0x000000), 0);
+    this.bounceTimer = 0; this.autoRotate = 0; this.handsOff = 0;
   }
 
   private emitDust(dt: number, rate: number, kind: "dust" | "splash") {
@@ -1021,7 +1067,7 @@ export class Engine {
         if (this.resumeIn > 0) { const prev = Math.ceil(this.resumeIn); this.resumeIn -= realDt; if (Math.ceil(this.resumeIn) !== prev) this.sound?.tick(); dt = 0; }
         if (this.hitStop > 0) { this.hitStop -= realDt; dt = 0; }
         if (dt > 0) {
-          this.updatePlayer(dt);
+          if (this.crashTimer > 0) this.updateCrash(dt); else this.updatePlayer(dt);
           const enemyDt = this.frenzy > 0 ? dt * 0.5 : dt; // frenzy: they slow down, you don't
           this.updateEnemies(enemyDt);
           this.updateBoss(enemyDt);

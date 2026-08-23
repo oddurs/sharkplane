@@ -32,7 +32,7 @@ const jsonLd = {
 // Pages can't set headers, so the CSP rides in a meta tag. Next's own inline runtime needs 'unsafe-inline' for scripts
 // in a static export; everything else is same-origin (the font is self-hosted by next/font).
 const csp = [
-  "default-src 'self'", "script-src 'self' 'unsafe-inline'", "style-src 'self' 'unsafe-inline'", "font-src 'self'",
+  "default-src 'self'", `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"}`, "style-src 'self' 'unsafe-inline'", "font-src 'self'",
   "img-src 'self' data: blob:", "connect-src 'self'", "worker-src 'self'", "object-src 'none'", "base-uri 'self'", "form-action 'none'", "frame-ancestors 'none'",
 ].join("; ");
 

@@ -97,7 +97,7 @@ export function buildWorld(scene: THREE.Scene, detail: Detail = DETAIL.high): Wo
     update(t) {
       for (let i = 0; i < wpos.count; i++) {
         const x = base[i * 3], z = base[i * 3 + 2];
-        wpos.setY(i, 0.5 * Math.sin(x * 0.05 + t * 1.1) + 0.35 * Math.cos(z * 0.07 + t * 1.7) + 0.2 * Math.sin((x + z) * 0.03 - t));
+        wpos.setY(i, 0.3 * Math.sin(x * 0.05 + t * 1.1) + 0.2 * Math.cos(z * 0.07 + t * 1.7) + 0.1 * Math.sin((x + z) * 0.03 - t));
       }
       wpos.needsUpdate = true;
       water.geometry.computeVertexNormals();
@@ -110,7 +110,7 @@ function buildWater(scene: THREE.Scene, seg: number) {
   g.rotateX(-Math.PI / 2);
   const m = new THREE.MeshPhongMaterial({ color: 0x2f86d8, specular: 0xffffff, shininess: 90, flatShading: true, transparent: true, opacity: 0.92 });
   const water = new THREE.Mesh(g, m);
-  water.position.y = 0;
+  water.position.y = -0.75; // ripples (±0.6) never rise above the sand band at y≥0
   water.receiveShadow = true;
   scene.add(water);
   return water;
