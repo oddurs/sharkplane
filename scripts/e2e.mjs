@@ -48,7 +48,13 @@ ws.onmessage = (ev) => {
 };
 const send = (method, params = {}) => new Promise((r) => { const i = ++id; pending[i] = r; ws.send(JSON.stringify({ id: i, method, params })); });
 const js = (expr) => send("Runtime.evaluate", { expression: expr, returnByValue: true }).then((r) => { if (r.exceptionDetails) errors.push(`JS(${expr.slice(0, 60)}): ${r.exceptionDetails.text}`); return r.result?.value; });
-const key = async (code) => { await send("Input.dispatchKeyEvent", { type: "keyDown", code, key: code }); await send("Input.dispatchKeyEvent", { type: "keyUp", code, key: code }); };
+const VK = { ShiftLeft: 16, Escape: 27, Space: 32, KeyS: 83, KeyW: 87, KeyX: 88, KeyA: 65, KeyD: 68 };
+const keyEvent = (type, code) => {
+  const vk = VK[code] ?? 0, letter = code.startsWith("Key") ? code.slice(3).toLowerCase() : "";
+  const key = code === "ShiftLeft" ? "Shift" : code === "Escape" ? "Escape" : code === "Space" ? " " : letter;
+  return send("Input.dispatchKeyEvent", { type, code, key, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers: code === "ShiftLeft" ? 8 : 0, text: type === "keyDown" && letter ? letter : undefined });
+};
+const key = async (code) => { await keyEvent("keyDown", code); await keyEvent("keyUp", code); };
 await send("Runtime.enable");
 
 const checks = [];
@@ -61,7 +67,7 @@ check("engine exposed with ?debug", await js(`typeof window.__game === 'object'`
 await js(`document.querySelector('.panel button.primary').click()`); await sleep(500);
 await key("KeyX"); await sleep(4500);
 check("countdown → playing", await js(`!!document.getElementById('stats')`));
-await send("Input.dispatchKeyEvent", { type: "keyDown", code: "ShiftLeft", key: "Shift" }); await sleep(5000);
+await keyEvent("keyDown", "ShiftLeft"); await sleep(5000);
 const speed = await js(`window.__game.player.speed`);
 check(`rolls down the runway (speed ${speed?.toFixed?.(1)})`, speed > 25);
 await key("KeyS"); await sleep(2500);
