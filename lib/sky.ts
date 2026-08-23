@@ -27,7 +27,7 @@ const skyFrag = `
     float h = clamp(d.y, 0.0, 1.0);
     vec3 col = mix(horizon, top, pow(h, 0.55));
     float s = max(dot(d, normalize(sunDir)), 0.0);
-    col += sunColor * (pow(s, 220.0) * 1.6 + pow(s, 8.0) * 0.18);
+    col += sunColor * (pow(s, 600.0) * 0.9 + pow(s, 12.0) * 0.08);
     gl_FragColor = vec4(col, 1.0);
   }
 `;

@@ -9,7 +9,7 @@ import type { Hud, Options } from "../store";
  */
 
 type Anchor = "tl" | "tc" | "tr" | "bl" | "bc" | "br";
-const TILT = -0.18; // every plate lies back a little toward the camera
+const TILT = -0.34; // every plate lies back toward the camera so the bevels and side faces read
 
 class Plate extends THREE.Group {
   body: THREE.Mesh;
@@ -19,6 +19,9 @@ class Plate extends THREE.Group {
     super();
     this.body = new THREE.Mesh(slab(w, h, depth, skew), mat(color));
     this.add(this.body);
+    // drop shadow slab under the plate
+    const shadow = new THREE.Mesh(slab(w, h, 1, skew, 0), mat("inkDark", { opacity: 0.45 }));
+    shadow.position.set(6, -8, -depth - 4); this.add(shadow);
     if (text) { this.label = new Label({ ...text, align: "center" }); this.label.position.z = depth + 3; this.add(this.label); }
     this.rotation.x = TILT;
   }
@@ -31,7 +34,8 @@ type Contact = { mesh: THREE.Mesh; pin: THREE.Mesh };
 
 export class Hud3D {
   scene = new THREE.Scene();
-  camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -500, 500);
+  camera = new THREE.PerspectiveCamera(28, 1, 10, 4000);
+  root = new THREE.Group();
   private w = 1; private h = 1; private ui = 1; // ui scale
   private coarse = false;
   private safe = { t: 0, r: 0, b: 0, l: 0 };
@@ -56,16 +60,16 @@ export class Hud3D {
 
   constructor() {
     resolveFont();
-    const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(-0.6, 1, 1.4); this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0xbfe3ff, 0.5); fill.position.set(0.8, -0.4, 1); this.scene.add(fill);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    this.camera.position.z = 300;
+    const key = new THREE.DirectionalLight(0xffffff, 1.15); key.position.set(-0.6, 1, 1.4); this.scene.add(key);
+    const fill = new THREE.DirectionalLight(0xbfe3ff, 0.35); fill.position.set(0.8, -0.4, 1); this.scene.add(fill);
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.42));
+    this.scene.add(this.root);
 
-    this.score = new Plate(150, 58, "ink", { size: 40, color: "#ffd84a" }, 10, 0.08); this.scene.add(this.score);
-    this.eaten = new Plate(230, 34, "red", { size: 18, color: "#fff" }, 7); this.scene.add(this.eaten);
-    this.timer = new Plate(140, 50, "cream", { size: 34, color: "#1b2a44" }, 9, 0.05); this.scene.add(this.timer);
-    this.wave = new Plate(120, 22, "yellow", { size: 12, color: "#1b2a44" }, 5); this.scene.add(this.wave);
-    this.stats = new Plate(210, 64, "ink", { size: 15, color: "#fff" }, 7); this.scene.add(this.stats);
+    this.score = new Plate(150, 58, "ink", { size: 40, color: "#ffd84a" }, 14, 0.08); this.score.rotation.y = 0.14; this.root.add(this.score);
+    this.eaten = new Plate(230, 34, "red", { size: 18, color: "#fff" }, 10); this.eaten.rotation.y = -0.14; this.root.add(this.eaten);
+    this.timer = new Plate(140, 50, "cream", { size: 34, color: "#1b2a44" }, 14, 0.05); this.root.add(this.timer);
+    this.wave = new Plate(120, 22, "yellow", { size: 12, color: "#1b2a44" }, 5); this.root.add(this.wave);
+    this.stats = new Plate(210, 64, "ink", { size: 15, color: "#fff" }, 10); this.stats.rotation.y = 0.12; this.root.add(this.stats);
 
     // combo ring: 10 segments
     for (let i = 0; i < 10; i++) {
@@ -74,7 +78,7 @@ export class Hud3D {
     }
     const comboCore = new THREE.Mesh(hexPuck(20, 6, 2), mat("ink")); this.comboGroup.add(comboCore);
     this.comboChip = new Label({ size: 16, color: "#ffd84a", stroke: "#1b2a44" }); this.comboChip.position.z = 12; this.comboGroup.add(this.comboChip);
-    this.comboGroup.rotation.x = TILT; this.scene.add(this.comboGroup);
+    this.comboGroup.rotation.x = TILT; this.root.add(this.comboGroup);
 
     // radar puck
     const base = new THREE.Mesh(hexPuck(100, 10, 4), mat("ink")); this.radar.add(base);
@@ -89,7 +93,7 @@ export class Hud3D {
       const m = new THREE.Mesh(silhouette("fighter", 7), mat("yellow")); m.visible = false;
       this.radar.add(pin, m); this.contacts.push({ mesh: m, pin });
     }
-    this.radar.rotation.x = TILT * 1.6; this.scene.add(this.radar);
+    this.radar.rotation.x = -0.62; this.root.add(this.radar);
 
     // gauges
     for (const [name, color] of [["THR", "orange"], ["BST", "sky"], ["FOOD", "green"]] as const) {
@@ -99,14 +103,14 @@ export class Hud3D {
       const needle = new THREE.Mesh(dart(14, 10, 3), mat("white")); needle.rotation.z = Math.PI / 2; needle.position.set(-20, 0, 10); g.add(needle);
       const label = new Label({ size: 9, color: "#1b2a44" }); label.position.set(0, -100, 12); g.add(label); label.set(name);
       const tag = new THREE.Mesh(slab(32, 14, 4, 0.05, 1), mat("cream")); tag.position.set(0, -100, 8); g.add(tag);
-      g.rotation.x = TILT; this.scene.add(g);
+      g.rotation.x = TILT; this.root.add(g);
       this.gauges.push({ group: g, fill, needle, label, value: new Spring(0) });
     }
 
     // compass
     this.compassArrow = new THREE.Mesh(dart(30, 42, 12), mat("white")); this.compass.add(this.compassArrow);
     this.lockChip = new Plate(74, 22, "ink", { size: 13, color: "#ffd84a" }, 5); this.lockChip.position.y = -38; this.compass.add(this.lockChip);
-    this.scene.add(this.compass);
+    this.root.add(this.compass);
 
     // target markers pool
     for (let i = 0; i < 16; i++) {
@@ -114,7 +118,7 @@ export class Hud3D {
       for (let c = 0; c < 4; c++) { const m = new THREE.Mesh(corner(14, 4, 4), mat("white")); m.rotation.z = (-c * Math.PI) / 2; corners.push(m); g.add(m); }
       const d = new THREE.Mesh(dart(26, 34, 8), mat("white")); d.visible = false; g.add(d);
       const label = new Label({ size: 12, color: "#fff", stroke: "#1b2a44" }); label.position.y = -36; g.add(label);
-      g.visible = false; this.scene.add(g);
+      g.visible = false; this.root.add(g);
       this.markers.push({ group: g, corners, dart: d, label, lockScale: new Spring(1) });
     }
 
@@ -122,31 +126,34 @@ export class Hud3D {
     for (let i = 0; i < 2; i++) {
       const plate = new Plate(250, 30, "cream", { size: 13, color: "#1b2a44", font: "body" }, 6, 0.05);
       const check = new THREE.Mesh(hexPuck(8, 4, 1), mat("yellow")); check.position.set(-112, 0, 8); plate.add(check);
-      this.scene.add(plate); this.objectives.push({ plate, check, flip: new Spring(0) });
+      this.root.add(plate); this.objectives.push({ plate, check, flip: new Spring(0) });
     }
 
     // boss girder
     const girder = new THREE.Mesh(slab(260, 22, 8, 0.02, 2), mat("ink")); this.boss.add(girder);
     this.bossFill = new THREE.Mesh(new THREE.BoxGeometry(1, 12, 4), mat("orange")); this.bossFill.position.z = 9; this.boss.add(this.bossFill);
     this.bossLabel = new Label({ size: 12, color: "#ff5d2e", stroke: "#1b2a44" }); this.bossLabel.position.set(0, 22, 12); this.boss.add(this.bossLabel); this.bossLabel.set("ZEPPELIN");
-    this.boss.rotation.x = TILT; this.boss.visible = false; this.scene.add(this.boss);
+    this.boss.rotation.x = TILT; this.boss.visible = false; this.root.add(this.boss);
 
     // messages
-    this.msg = new Plate(10, 10, "yellow", { size: 64, color: "#ffd84a", stroke: "#b3261e" }, 0); this.msg.body.visible = false; this.scene.add(this.msg);
-    for (let i = 0; i < 8; i++) { const b = new THREE.Mesh(hexPuck(6, 4, 1), mat(i % 2 ? "yellow" : "orange")); b.visible = false; this.scene.add(b); this.msgBits.push(b); }
-    this.banner = new Plate(360, 64, "blue", { size: 44, color: "#fff" }, 14, 0.04); this.scene.add(this.banner);
-    this.countdown = new Label({ size: 150, color: "#ffd84a", stroke: "#b3261e" }); this.scene.add(this.countdown);
-    this.subtitle = new Plate(520, 44, "ink", { size: 18, color: "#fff", font: "body" }, 8, 0.03); this.scene.add(this.subtitle);
+    this.msg = new Plate(10, 10, "yellow", { size: 64, color: "#ffd84a", stroke: "#b3261e" }, 0); this.msg.body.visible = false; this.root.add(this.msg);
+    for (let i = 0; i < 8; i++) { const b = new THREE.Mesh(hexPuck(6, 4, 1), mat(i % 2 ? "yellow" : "orange")); b.visible = false; this.root.add(b); this.msgBits.push(b); }
+    this.banner = new Plate(360, 64, "blue", { size: 44, color: "#fff" }, 14, 0.04); this.root.add(this.banner);
+    this.countdown = new Label({ size: 150, color: "#ffd84a", stroke: "#b3261e" }); this.root.add(this.countdown);
+    this.subtitle = new Plate(520, 44, "ink", { size: 18, color: "#fff", font: "body" }, 8, 0.03); this.root.add(this.subtitle);
     this.subtitleWho = new THREE.Mesh(hexPuck(12, 6, 2), mat("yellow")); this.subtitleWho.position.set(-240, 0, 12); this.subtitle.add(this.subtitleWho);
-    this.caption = new Plate(300, 26, "inkDark", { size: 13, color: "#ffd84a", font: "body" }, 5, 0.03); this.scene.add(this.caption);
-    this.toast = new Plate(420, 34, "ink", { size: 14, color: "#ffd84a", font: "body" }, 7, 0.03); this.scene.add(this.toast);
-    this.muted = new Plate(250, 30, "orange", { size: 13, color: "#fff", font: "body" }, 6); this.scene.add(this.muted);
+    this.caption = new Plate(300, 26, "inkDark", { size: 13, color: "#ffd84a", font: "body" }, 5, 0.03); this.root.add(this.caption);
+    this.toast = new Plate(420, 34, "ink", { size: 14, color: "#ffd84a", font: "body" }, 7, 0.03); this.root.add(this.toast);
+    this.muted = new Plate(250, 30, "orange", { size: 13, color: "#fff", font: "body" }, 6); this.root.add(this.muted);
   }
 
   resize(w: number, h: number, coarse: boolean, safe: { t: number; r: number; b: number; l: number }) {
     this.w = w; this.h = h; this.coarse = coarse; this.safe = safe;
     this.ui = coarse ? Math.max(0.55, Math.min(0.8, h / 520)) : Math.max(0.75, Math.min(1.15, h / 800));
-    this.camera.left = -w / 2; this.camera.right = w / 2; this.camera.top = h / 2; this.camera.bottom = -h / 2;
+    // perspective camera placed so that z=0 maps 1:1 to CSS pixels — tilted plates then show real depth
+    this.camera.aspect = w / h;
+    this.camera.position.z = (h / 2) / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    this.camera.far = this.camera.position.z + 2000; this.camera.near = 10;
     this.camera.updateProjectionMatrix();
   }
 
@@ -165,8 +172,14 @@ export class Hud3D {
 
   setShake(x: number, y: number) { this.shake.set(x, y); }
 
+  private lean = new Spring(0, 0, 60, 10); private lag = new Spring(0, 0, 90, 12);
   update(hud: Hud, o: Options, dt: number) {
     this.t += dt;
+    // cockpit inertia: the whole HUD leans with bank and sags under g
+    const motion = o.reducedMotion ? 0 : 1;
+    this.lean.target = -hud.bank * 0.05 * motion; this.lag.target = -hud.gForce * 10 * motion;
+    this.root.rotation.z = this.lean.update(dt); this.root.position.y = this.lag.update(dt);
+    this.root.rotation.y = -hud.bank * 0.03 * motion;
     const s = this.ui, bob = (i: number) => Math.sin(this.t * 1.3 + i) * 0.6 * (o.reducedMotion ? 0 : 1);
     const mm = Math.floor(hud.timeLeft / 60), ss = String(hud.timeLeft % 60).padStart(2, "0");
 
@@ -214,7 +227,7 @@ export class Hud3D {
 
     // radar (bottom-right beside gauges; bottom-centre on phones)
     if (this.coarse) { this.at("bc", 0, 90, this.radar); this.radar.scale.multiplyScalar(s * 0.5); } else { this.at("br", 230, 125, this.radar); this.radar.scale.multiplyScalar(s); }
-    this.radarRoll.target = hud.bank * 0.06; this.radar.rotation.y = this.radarRoll.update(dt) * (o.reducedMotion ? 0 : 1);
+    this.radarRoll.target = hud.bank * 0.12; this.radar.rotation.y = this.radarRoll.update(dt) * (o.reducedMotion ? 0 : 1);
     this.sweep.rotation.z = -this.t * 2.6;
     hud.radar.forEach((b, i) => {
       const c = this.contacts[i]; if (!c) return;

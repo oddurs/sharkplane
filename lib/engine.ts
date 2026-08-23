@@ -121,6 +121,8 @@ export class Engine {
   private dustAcc = 0; private streakAcc = 0; private heartAcc = 0;
   private camQ = new THREE.Quaternion(); private titleAngle = 0;
   private frameEma = 0.016; private slowFor = 0; private autoDropped = 0;
+  private lockRef: object | null = null;
+  private gForce = 0; private lastVel = new THREE.Vector3();
   private tier: Tier = "high";
   private tiltInput: Tilt | null = null;
   private toastTimer = 0;
@@ -688,6 +690,10 @@ export class Engine {
       }
     }
 
+    // felt acceleration for HUD inertia
+    const vel = FWD.clone().applyQuaternion(p.q).multiplyScalar(p.speed);
+    this.gForce = THREE.MathUtils.lerp(this.gForce, Math.min(2, vel.distanceTo(this.lastVel) / Math.max(dt, 1e-3) / 60), 0.2);
+    this.lastVel.copy(vel);
     // visuals: gear, prop disc, gulp bulge, trails, speed streaks
     p.mesh.position.copy(p.pos); p.mesh.quaternion.copy(p.q);
     this.model.prop.rotation.z += (2 + p.speed * 0.6) * dt;
@@ -880,18 +886,21 @@ export class Engine {
     const f = FWD.clone().applyQuaternion(p.q);
     const fh = f.clone().setY(0).normalize(), rh = new THREE.Vector3(-fh.z, 0, fh.x);
     const radar: RadarBlip[] = [], alerts: Alert[] = [], targets: Target[] = [];
-    type Contact = { pos: THREE.Vector3; fwd: THREE.Vector3; kind: EnemyKind | "boss"; alert: boolean; hurt: boolean };
-    const contacts: Contact[] = this.enemies.map((e) => ({ pos: e.pos, fwd: FWD.clone().applyQuaternion(e.q), kind: e.kind, alert: e.alertTimer > 0, hurt: e.hp < KINDS[e.kind].hp }));
-    if (this.boss) contacts.push({ pos: this.boss.pos, fwd: FWD.clone().applyQuaternion(this.boss.q), kind: "boss", alert: false, hurt: false });
-    let lock: Contact | null = null, lockScore = Infinity, nearest: Contact | null = null, nearestD = Infinity;
+    type Contact = { ref: object; pos: THREE.Vector3; fwd: THREE.Vector3; kind: EnemyKind | "boss"; alert: boolean; hurt: boolean };
+    const contacts: Contact[] = this.enemies.map((e) => ({ ref: e, pos: e.pos, fwd: FWD.clone().applyQuaternion(e.q), kind: e.kind, alert: e.alertTimer > 0, hurt: e.hp < KINDS[e.kind].hp }));
+    if (this.boss) contacts.push({ ref: this.boss, pos: this.boss.pos, fwd: FWD.clone().applyQuaternion(this.boss.q), kind: "boss", alert: false, hurt: false });
+    let lock: Contact | null = null, lockScore = Infinity, nearest: Contact | null = null, nearestD = Infinity, current: Contact | null = null, currentScore = Infinity;
+    const scoreOf = (c: Contact) => { const rel = c.pos.clone().sub(p.pos); const d = rel.length(); const ahead = f.dot(rel.clone().normalize()); return { d, sc: ahead > 0.5 && d < 300 ? d : d + 10000 }; };
     for (const c of contacts) {
-      const rel = c.pos.clone().sub(p.pos); const d = rel.length();
-      const ahead = f.dot(rel.clone().normalize());
+      const { d, sc } = scoreOf(c);
       if (d < nearestD) { nearestD = d; nearest = c; }
-      const sc = ahead > 0.5 && d < 300 ? d : d + 10000;
       if (sc < lockScore) { lockScore = sc; lock = c; }
+      if (c.ref === this.lockRef) { current = c; currentScore = sc; }
     }
     if (!lock) lock = nearest;
+    // hysteresis: keep the current lock unless the best candidate is clearly better (20 %) or the current one fell out of the cone
+    if (current && lock !== current && currentScore < 10000 && lockScore > currentScore * 0.8) { lock = current; lockScore = currentScore; }
+    this.lockRef = lock ? lock.ref : null;
     const camInv = this.camera.quaternion.clone().invert();
     for (const c of contacts) {
       const rel = c.pos.clone().sub(p.pos); const d = rel.length();
@@ -926,7 +935,7 @@ export class Engine {
       score: this.score, combo: this.combo, eaten: this.eaten,
       speed: Math.round(p.speed * 5), alt: Math.round(p.pos.y - groundHeight(p.pos.x, p.pos.z)),
       throttle: p.throttle, boost: this.boostMeter, boosting: this.boosting, groundState: p.state,
-      compassAngle, compassNear: lockScore < 80, lockPitch, bank,
+      compassAngle, compassNear: lockScore < 80, lockPitch, bank, gForce: this.gForce,
       msg: this.msg, msgVisible: this.msgTimer > 0,
       timeLeft: Math.ceil(this.timeLeft), wave: this.wave, waveBanner: this.waveBannerTimer > 0 ? this.waveBanner : "",
       countdown: this.countdownShown, hunger: this.hunger, frenzy: Math.max(0, this.frenzy),

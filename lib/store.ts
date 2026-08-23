@@ -56,6 +56,7 @@ export type Hud = {
   compassNear: boolean;
   lockPitch: number; // radians, + = above you
   bank: number; // -1..1
+  gForce: number; // felt acceleration 0..2, for HUD inertia
   msg: string;
   msgVisible: boolean;
   timeLeft: number;
@@ -148,7 +149,7 @@ function save(key: string, value: unknown) {
 
 export const emptyHud: Hud = {
   score: 0, combo: 0, eaten: 0, speed: 0, alt: 0, throttle: 0, boost: 1, boosting: false,
-  groundState: "rolling", compassAngle: 0, compassNear: false, lockPitch: 0, bank: 0, msg: "", msgVisible: false,
+  groundState: "rolling", compassAngle: 0, compassNear: false, lockPitch: 0, bank: 0, gForce: 0, msg: "", msgVisible: false,
   timeLeft: 180, wave: 1, waveBanner: "", countdown: "", hunger: 1, frenzy: 0, objectives: [], boss: null, timeOfDay: "noon", intro: null, subtitle: null, caption: "", weather: "clear", resumeIn: 0, muted: true, rolling: true, tier: "high", toast: "",
   radar: [], alerts: [], targets: [], lockDist: null,
 };
