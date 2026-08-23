@@ -11,6 +11,8 @@ import { Birds, WorldLife, Rain } from "./life";
 import { t as tr, setLang } from "./i18n";
 import { Input, Tilt, touchState } from "./input";
 import { Rng, hashString, todayKey } from "./rng";
+import { BIG_MOMENT_QUIET, TIERS, type Tier as JuiceTier } from "./tuning";
+import { Fx as FxKit } from "./fx";
 import { store, type EnemyKind, type Alert, type RadarBlip, type Target, type Objective, type Options } from "./store";
 
 const FWD = new THREE.Vector3(0, 0, -1);
@@ -123,6 +125,8 @@ export class Engine {
   private frameEma = 0.016; private slowFor = 0; private autoDropped = 0;
   private lockRef: object | null = null;
   private crashTimer = 0; private crashPos = new THREE.Vector3(); private crashYaw = 0;
+  private bigUntil = -99; private crashFade = 0;
+  private wipeT = 0; private wipeDir = 0; private wipeAction: (() => void) | null = null;
   private gForce = 0; private lastVel = new THREE.Vector3();
   private tier: Tier = "high";
   private tiltInput: Tilt | null = null;
@@ -214,8 +218,15 @@ export class Engine {
     this.resumeIn = 3; // 3-2-1 so you're not eaten blind
     store.set({ phase: "playing" });
   }
-  restart() { this.sound?.resume(); this.startRound(); }
-  quitToTitle() { this.sound?.resume(); this.resetWorld(); store.set({ phase: "title", menuPage: "main" }); this.sound?.music.play("title"); }
+  restart() { this.sound?.resume(); this.wipe(() => this.startRound()); }
+  quitToTitle() { this.sound?.resume(); this.wipe(() => { this.resetWorld(); store.set({ phase: "title", menuPage: "main" }); this.sound?.music.play("title"); }); }
+
+  /** Everything passes through the mouth: jaws snap shut, the action happens, jaws open. */
+  private wipe(action: () => void) {
+    if (this.wipeDir !== 0) { this.wipeAction = action; return; }
+    this.wipeAction = action; this.wipeDir = 1;
+    this.sound?.bite();
+  }
 
   applyOptions(o: Options) {
     this.sound?.setVolumes({ master: o.volume, music: o.music, sfx: o.sfx, ui: o.ui });
@@ -253,6 +264,7 @@ export class Engine {
   /** Radio line with a cooldown per key so it never nags. */
   private radio(key: Parameters<typeof tr>[0], cooldown = 12) {
     const now = this.time;
+    if (now < this.bigUntil && !key.startsWith("t_") && key !== "r_bossDown" && key !== "r_frenzy") return; // don't talk over the big moment
     if ((this.lastRadio.get(key) ?? -99) + cooldown > now) return;
     this.lastRadio.set(key, now);
     const text = tr(key);
@@ -505,30 +517,34 @@ export class Engine {
     if (this.boosting) this.objective("boost");
     if (at.y - groundHeight(at.x, at.z) < 20) this.objective("low");
     if (kind === "escort") { if (this.time - this.lastEscortEat < 5) this.objective("pair"); this.lastEscortEat = this.time; }
-    this.showMsg(YELLS[Math.floor(Math.random() * YELLS.length)] + (this.combo > 1 ? ` x${this.combo}` : ""));
+    const tier: JuiceTier = kind === "boss" || this.combo >= FRENZY_AT ? "milestone" : kind === "bomber" || this.combo >= 3 ? "notable" : "routine";
+    const T = TIERS[tier];
+    if (T.yell) this.showMsg(YELLS[Math.floor(Math.random() * YELLS.length)] + (this.combo > 1 ? ` x${this.combo}` : ""));
+    else if (this.combo > 1) this.showMsg(`x${this.combo}`);
+    if (tier === "milestone") this.bigUntil = this.time + BIG_MOMENT_QUIET;
     const combo = this.combo, snd = this.sound;
     snd?.music.onNextEighth(() => snd.chomp(kind, combo));
-    this.input.rumble(kind === "boss" ? 1 : 0.7, 0.4, kind === "boss" ? 400 : 180);
+    this.input.rumble(T.rumble[0], T.rumble[1], T.rumble[2]);
     if (this.eaten === 1) this.radio("r_firstEat", 60); else if (this.combo >= 3) this.radio("r_combo", 30);
     if (kind === "boss") this.radio("r_bossDown", 5);
     if (this.tutorialStep === 3) { this.tutorialStep = 4; this.tutorialTimer = 0; }
     p.jaw = 1.5; p.gulp = Math.min(2, p.gulp + 1);
     p.speed = Math.min(p.speed + 8, MAX_SPEED * 1.6);
-    this.shake = Math.max(this.shake, 0.6); this.hitStop = 0.08;
+    this.shake = Math.max(this.shake, T.shake); this.hitStop = T.hitStop;
   }
 
   private bite(e: Enemy, index: number) {
     const k = KINDS[e.kind];
     e.hp -= 1;
     if (e.hp > 0) {
-      this.fx.burst(e.pos, e.color, 12, 0.6);
+      this.fx.burst(e.pos, FxKit.tintsOf(e.model.parts), 12, 0.6);
       e.speed *= 0.7; e.alertTimer = 1; e.biteCooldown = 1.0;
       e.pos.addScaledVector(RIGHT.clone().applyQuaternion(this.player.q), (Math.random() < 0.5 ? -1 : 1) * 8).y += 3;
       this.score += 50; this.showMsg("BITE!"); this.sound?.bite(); this.sound?.ow(e.pos); this.input.rumble(0.4, 0.6, 120);
       this.shake = Math.max(this.shake, 0.4); this.hitStop = 0.05;
       return;
     }
-    this.fx.shred(e.model.parts, e.mesh, e.color, k.scale);
+    this.fx.shred(e.model.parts, e.mesh, k.scale);
     this.dropEnemy(e, index);
     this.feed(k.pts, k.food, e.kind, e.pos);
   }
@@ -537,7 +553,7 @@ export class Engine {
     const k = KINDS[e.kind];
     e.pos.y = groundHeight(e.pos.x, e.pos.z) + 1;
     if (isWater(e.pos.x, e.pos.z)) this.fx.splash(e.pos, 20);
-    this.fx.shred(e.model.parts, e.mesh, e.color, k.scale);
+    this.fx.shred(e.model.parts, e.mesh, k.scale);
     this.fx.slick(e.pos);
     this.fx.chute(e.pos.clone().add(new THREE.Vector3(0, 6, 0)));
     this.dropEnemy(e, index);
@@ -590,12 +606,12 @@ export class Engine {
         const wp = w.getWorldPosition(new THREE.Vector3());
         if (mouth.distanceTo(wp) < 11) {
           b.weakPoints.splice(i, 1); b.mesh.remove(w); b.hp--; b.hitCooldown = 0.8;
-          this.fx.burst(wp, 0xff4020, 18, 1.2);
+          this.fx.burst(wp, [0xff4020, 0xb8b2a0], 18, 1.2);
           this.score += 200; this.showMsg(b.hp > 0 ? `WEAK POINT! ${b.hp} LEFT` : "ZEPPELIN DOWN!");
           this.sound?.chomp("bomber", 1); this.shake = Math.max(this.shake, 0.8); this.hitStop = 0.08; this.zoomPunch = 1; this.input.rumble(1, 0.5, 250);
           p.speed = Math.max(p.speed * 0.85, 25);
           if (b.hp <= 0) {
-            this.fx.shred(b.parts, b.mesh, 0xb8b2a0, 2.5);
+            this.fx.shred(b.parts, b.mesh, 2.5);
             this.feed(1000, 1, "boss", b.pos);
             this.removeBoss();
             this.sound?.music.play("play");
@@ -726,8 +742,8 @@ export class Engine {
     // birds: snack on anything in front of the mouth; eat a parachute for a bonus
     const mouthB = p.pos.clone().addScaledVector(FWD.clone().applyQuaternion(p.q), 4.5);
     const bi = this.birds.near(mouthB, 5);
-    if (bi >= 0) { this.birds.eat(bi); this.fx.burst(this.birds.pos[bi], 0xffffff, 8, 0.4); this.sound?.feathers(this.birds.pos[bi]); this.score += 10; this.hunger = Math.min(1, this.hunger + 0.05); this.radio("r_bird", 30); }
-    for (const c of this.fx.chutes()) if (c.position.distanceTo(mouthB) < 6) { this.fx.remove(c); this.fx.burst(c.position, 0xf3e7d2, 10, 0.5); this.score += 50; this.showMsg("PILOT SNACK +50"); this.sound?.chomp("fighter", 1); }
+    if (bi >= 0) { this.birds.eat(bi); this.fx.feathers(this.birds.pos[bi]); this.sound?.feathers(this.birds.pos[bi]); this.score += 10; this.hunger = Math.min(1, this.hunger + 0.05); this.radio("r_bird", 30); }
+    for (const c of this.fx.chutes()) if (c.position.distanceTo(mouthB) < 6) { const at = c.position.clone(); this.fx.remove(c); this.fx.burst(at, [0xf3e7d2, 0x4a3a2a], 10, 0.5); this.score += 50; this.showMsg("PILOT SNACK +50"); this.sound?.chomp("fighter", 1); }
     if (this.boosting || this.lunge > 0.3) {
       this.streakAcc += dt * 40;
       const n = Math.floor(this.streakAcc);
@@ -742,10 +758,10 @@ export class Engine {
     this.crashPos.copy(p.pos);
     const f = FWD.clone().applyQuaternion(p.q); this.crashYaw = Math.atan2(-f.x, -f.z);
     if (isWater(p.pos.x, p.pos.z)) { this.fx.splash(p.pos, 30); this.sound?.splash(p.pos); } else { this.fx.slick(p.pos); }
-    this.fx.shred(this.model.parts, p.mesh, 0x5b6b3a, 1.2);
+    this.fx.shred(this.model.parts, p.mesh, 1.2);
     p.mesh.visible = false;
     for (const t of this.trails) t.reset(p.pos); this.contrail.reset(p.pos);
-    this.sound?.crash(p.pos); this.sound?.thud(0.8);
+    this.sound?.crash(p.pos); this.sound?.thud(0.8); this.sound?.setMuffled(true);
     this.input.rumble(1, 1, 500);
     this.shake = 1.4; this.hitStop = 0.12;
     this.combo = 0; this.comboTimer = 0; this.frenzy = 0; this.post.setTint(new THREE.Color(0xff5d2e), 0);
@@ -765,7 +781,9 @@ export class Engine {
     p.mesh.visible = true; p.mesh.position.copy(p.pos); p.mesh.quaternion.copy(p.q);
     this.camQ.copy(p.q);
     for (const t of this.trails) t.reset(p.pos); this.contrail.reset(p.pos);
-    this.post.setTint(new THREE.Color(0x000000), 0);
+    this.sound?.setMuffled(false);
+    this.post.setTint(new THREE.Color(0xffffff), 0.7); // wake up inside a cloud, fade to clear
+    this.crashFade = 0.7;
     this.bounceTimer = 0; this.autoRotate = 0; this.handsOff = 0;
   }
 
@@ -880,6 +898,7 @@ export class Engine {
     if (this.comboTimer > 0) { this.comboTimer -= dt; if (this.comboTimer <= 0) this.combo = 0; }
     this.msgTimer -= dt; this.waveBannerTimer -= dt; this.waveTimer -= dt;
     if (this.frenzy > 0) { this.frenzy -= dt; if (this.frenzy <= 0) this.post.setTint(new THREE.Color(0xff5d2e), 0); }
+    if (this.crashFade > 0) { this.crashFade = Math.max(0, this.crashFade - dt * 0.6); this.post.setTint(new THREE.Color(0xffffff), this.crashFade); }
     if (this.waveTimer <= 0) {
       if (!this.touchedGroundThisWave && this.hasBeenAirborne) this.objective("clean");
       this.touchedGroundThisWave = false;
@@ -887,7 +906,7 @@ export class Engine {
       this.waveBanner = `WAVE ${this.wave}`; this.waveBannerTimer = 2.5; this.sound?.horn(); this.radio("r_wave", 10);
       if (this.wave % 3 === 0 && !this.boss) this.spawnBoss();
     }
-    if (this.timeLeft <= 0) this.finish();
+    if (this.timeLeft <= 0 && this.wipeDir === 0) this.wipe(() => this.finish());
 
     // day cycle + weather
     const prog = 1 - this.timeLeft / ROUND_TIME;
@@ -896,6 +915,7 @@ export class Engine {
     this.rain.intensity = this.rainLevel;
     this.sky.blend(this.timeOfDay, this.nextTod, prog, this.rainLevel);
     (this.world.water.material as THREE.MeshPhongMaterial).shininess = 90 + this.rainLevel * 120;
+    this.world.leaves.color.setHex(0x2e8b3a).lerp(new THREE.Color(0x16321f), 1 - Math.min(1, this.sky.sun.intensity / 1.4));
     store.setHud({ weather: this.rainLevel > 0.3 ? "rain" : "clear" });
     // music follows the action
     if (this.sound) this.sound.music.intensity = this.frenzy > 0 ? 3 : this.combo >= 2 ? 2 : this.eaten > 0 ? 1 : 0;
@@ -988,7 +1008,7 @@ export class Engine {
       score: this.score, combo: this.combo, eaten: this.eaten,
       speed: Math.round(p.speed * 5), alt: Math.round(p.pos.y - groundHeight(p.pos.x, p.pos.z)),
       throttle: p.throttle, boost: this.boostMeter, boosting: this.boosting, groundState: p.state,
-      compassAngle, compassNear: lockScore < 80, lockPitch, bank, gForce: this.gForce,
+      compassAngle, compassNear: lockScore < 80, lockPitch, bank, gForce: this.gForce, comboFrac: this.comboTimer > 0 ? this.comboTimer / 4 : 0,
       msg: this.msg, msgVisible: this.msgTimer > 0,
       timeLeft: Math.ceil(this.timeLeft), wave: this.wave, waveBanner: this.waveBannerTimer > 0 ? this.waveBanner : "",
       countdown: this.countdownShown, hunger: this.hunger, frenzy: Math.max(0, this.frenzy),
@@ -1039,6 +1059,11 @@ export class Engine {
       this.rain.update(realDt, this.camera.position, this.wind);
     }
 
+    if (this.wipeDir !== 0) {
+      this.wipeT += realDt * this.wipeDir / 0.32;
+      if (this.wipeDir > 0 && this.wipeT >= 1) { this.wipeT = 1; this.wipeAction?.(); this.wipeAction = null; this.wipeDir = -1; }
+      else if (this.wipeDir < 0 && this.wipeT <= 0) { this.wipeT = 0; this.wipeDir = 0; }
+    }
     if (this.input.consumePause()) {
       if (phase === "playing") { this.pause(); return; }
       if (phase === "paused") { this.resume(); return; }
@@ -1051,7 +1076,7 @@ export class Engine {
         if (render && isTouch() && (this.frameParity = !this.frameParity)) return;
         if (this.sound && this.sound.music["mode"] === "off") this.sound.music.play("title");
         this.titleScene(realDt);
-        this.fx.update(realDt);
+        this.fx.update(realDt, this.camera.position);
         break;
       case "intro":
         this.input.consumePause();
@@ -1086,7 +1111,7 @@ export class Engine {
           const enemyDt = this.frenzy > 0 ? dt * 0.5 : dt; // frenzy: they slow down, you don't
           this.updateEnemies(enemyDt);
           this.updateBoss(enemyDt);
-          this.fx.update(dt);
+          this.fx.update(dt, this.camera.position);
           this.updateRound(dt);
           if (this.frenzy > 0) this.post.setTint(new THREE.Color(0xff5d2e), 0.18 + 0.06 * Math.sin(this.time * 8));
         }
@@ -1118,7 +1143,8 @@ export class Engine {
       } else if (mode === "pause") {
         this.hud3d.updatePause(realDt, tr("paused"));
       }
-      if (mode !== "none") {
+      this.hud3d.updateWipe(Math.max(0, Math.min(1, this.wipeT)));
+      if (mode !== "none" || this.wipeT > 0) {
         this.renderer.clearDepth();
         this.renderer.render(this.hud3d.scene, this.hud3d.camera);
       }

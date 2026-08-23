@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import type { Engine } from "@/lib/engine";
 import { LIVERIES } from "@/lib/models";
 import { store, useGame, type Options } from "@/lib/store";
@@ -55,18 +55,31 @@ export default function Menus({ engine }: { engine: RefObject<Engine | null> }) 
   function ScoreCard() {
     const r = store.get().round;
     const [copied, setCopied] = useState(false);
+    const [shown, setShown] = useState(0);
+    const [medalIn, setMedalIn] = useState(false);
+    useEffect(() => {
+      let raf = 0; const t0 = performance.now(); const dur = 900;
+      const step = (now: number) => {
+        const k = Math.min(1, (now - t0) / dur);
+        setShown(Math.round(r.score * (1 - Math.pow(1 - k, 3))));
+        if (k < 1) raf = requestAnimationFrame(step);
+      };
+      raf = requestAnimationFrame(step);
+      const medalT = setTimeout(() => setMedalIn(true), 1100);
+      return () => { cancelAnimationFrame(raf); clearTimeout(medalT); };
+    }, [r.score]);
     const share = `SHARKPLANE ${r.dateKey} · ${r.score} pts · ${r.eaten} eaten · best combo x${r.bestCombo}${r.medal !== "none" ? ` · ${r.medal.toUpperCase()} medal` : ""}`;
     const copy = () => { navigator.clipboard?.writeText(share).then(() => setCopied(true)); };
     return (
       <>
         <h2>{t("complete")}</h2>
         <div className="badges">
-          {r.medal !== "none" && <div className={`medal ${r.medal}`}>{r.medal.toUpperCase()} {t("medal")}</div>}
+          {r.medal !== "none" && medalIn && <div className={`medal ${r.medal}`}>{r.medal.toUpperCase()} {t("medal")}</div>}
           {r.isHighScore && <div className="badge">{t("newHigh")}</div>}
           {r.unlocked && <div className="badge unlock">{t("unlocked")}: {r.unlocked}</div>}
         </div>
         <div className="card">
-          <Row k={t("score")} v={r.score} />
+          <Row k={t("score")} v={shown} />
           <Row k={t("planesEaten")} v={`${r.eaten}  (${r.eatenByKind.fighter}F · ${r.eatenByKind.bomber}B · ${r.eatenByKind.escort}E${r.eatenByKind.boss ? ` · ${r.eatenByKind.boss} zeppelin` : ""})`} />
           <Row k={t("bestCombo")} v={r.bestCombo > 0 ? `x${r.bestCombo}` : "—"} />
           <Row k={t("firstBite")} v={r.firstBite === null ? t("never") : `${r.firstBite.toFixed(1)}s`} />

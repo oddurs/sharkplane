@@ -21,6 +21,8 @@ export class Audio {
   music: Music;
   radio: Radio;
   onCaption: ((c: Caption) => void) | null = null;
+  private duckGain!: GainNode;
+  private muffleF!: BiquadFilterNode;
   private wind: { gain: GainNode; filter: BiquadFilterNode } | null = null;
   private roll: { gain: GainNode; filter: BiquadFilterNode } | null = null;
 
@@ -29,9 +31,13 @@ export class Audio {
     const limiter = this.ctx.createDynamicsCompressor();
     limiter.threshold.value = -6; limiter.knee.value = 4; limiter.ratio.value = 12; limiter.attack.value = 0.003; limiter.release.value = 0.15;
     this.master = this.ctx.createGain();
-    this.master.connect(limiter).connect(this.ctx.destination);
+    this.muffleF = this.ctx.createBiquadFilter(); this.muffleF.type = "lowpass"; this.muffleF.frequency.value = 20000;
+    this.master.connect(this.muffleF).connect(limiter).connect(this.ctx.destination);
     this.buses = { music: this.ctx.createGain(), sfx: this.ctx.createGain(), ui: this.ctx.createGain() };
-    for (const b of Object.values(this.buses)) b.connect(this.master);
+    this.duckGain = this.ctx.createGain();
+    this.buses.music.connect(this.duckGain).connect(this.master);
+    this.buses.sfx.connect(this.master);
+    this.buses.ui.connect(this.master);
     this.setVolumes(volumes);
     this.engine = new EngineVoice(this.ctx, this.buses.sfx);
     this.music = new Music(this.ctx, this.buses.music);
@@ -43,7 +49,20 @@ export class Audio {
     this.master.gain.value = v.master;
     this.buses.music.gain.value = v.music * 0.6;
     this.buses.sfx.gain.value = v.sfx;
-    this.buses.ui.gain.value = v.ui;
+    this.buses.ui.gain.value = v.ui * 0.6; // UI sits under gameplay
+  }
+
+  /** Sidechain-style dip on the music under a foreground sound. */
+  duck(amount = 0.5, release = 0.4) {
+    const t = this.ctx.currentTime;
+    this.duckGain.gain.cancelScheduledValues(t);
+    this.duckGain.gain.setTargetAtTime(1 - amount, t, 0.04);
+    this.duckGain.gain.setTargetAtTime(1, t + 0.12, release);
+  }
+
+  /** Crash blackout: everything goes underwater-muffled, then back. */
+  setMuffled(on: boolean) {
+    this.muffleF.frequency.setTargetAtTime(on ? 300 : 20000, this.ctx.currentTime, on ? 0.08 : 0.25);
   }
   suspend() { void this.ctx.suspend(); }
   resume() { void this.ctx.resume(); }
@@ -111,6 +130,7 @@ export class Audio {
 
   // ---------- foley ----------
   chomp(kind: "fighter" | "escort" | "bomber" | "boss", combo: number) {
+    this.duck(kind === "boss" ? 0.7 : 0.45, kind === "boss" ? 0.8 : 0.35);
     const v = 0.6 + Math.random() * 0.2, pitch = 0.9 + Math.random() * 0.25;
     this.tone({ type: "square", f0: 1800 * pitch, f1: 300, dur: 0.05, vol: 0.25 }); // transient click
     if (kind === "bomber" || kind === "boss") {
@@ -151,7 +171,7 @@ export class Audio {
   spark(pos: THREE.Vector3) { const s = this.spatial(pos, 80); this.noise({ dur: 0.12, vol: 0.3 * s.gain, pan: s.pan, hp: 5000 }); }
   gearClunk() { this.noise({ dur: 0.12, vol: 0.35, lp: 500 }); this.tone({ type: "square", f0: 120, f1: 80, dur: 0.12, vol: 0.2 }); this.caption("[gear clunk]"); }
   sputter() { this.noise({ dur: 0.08, vol: 0.3, lp: 500 }); this.tone({ type: "square", f0: 90, f1: 60, dur: 0.08, vol: 0.2 }); }
-  heart() { this.tone({ type: "sine", f0: 70, f1: 45, dur: 0.18, vol: 0.5 }); }
+  heart() { this.tone({ type: "sine", f0: 70, f1: 45, dur: 0.18, vol: 0.35 }); }
   feathers(pos: THREE.Vector3) { const s = this.spatial(pos, 150); this.noise({ dur: 0.3, vol: 0.3 * s.gain, pan: s.pan, bp: 2200, q: 0.7 }); this.tone({ type: "square", f0: 1400, f1: 2200, dur: 0.1, vol: 0.1 * s.gain, pan: s.pan }); this.caption("[squawk]"); }
 
   // ---------- UI ----------
@@ -161,9 +181,9 @@ export class Audio {
   tick() { this.tone({ type: "sine", f0: 700, dur: 0.1, vol: 0.25, bus: "ui" }); }
   go() { this.tone({ type: "sine", f0: 900, f1: 1300, dur: 0.4, vol: 0.3, bus: "ui" }); }
   fanfare() { [523, 659, 784, 1047].forEach((f, i) => this.tone({ type: "square", f0: f, dur: 0.25, vol: 0.15, bus: "ui", lp: 2500, delay: i * 0.09 })); this.caption("[objective fanfare]"); }
-  horn() { this.tone({ type: "sawtooth", f0: 220, f1: 330, dur: 0.6, vol: 0.25, bus: "ui", lp: 1200 }); this.tone({ type: "sawtooth", f0: 330, f1: 440, dur: 0.6, vol: 0.2, bus: "ui", lp: 1200, delay: 0.3 }); this.caption("[wave horn]"); }
+  horn() { this.duck(0.35, 0.5); this.tone({ type: "sawtooth", f0: 220, f1: 330, dur: 0.6, vol: 0.25, bus: "ui", lp: 1200 }); this.tone({ type: "sawtooth", f0: 330, f1: 440, dur: 0.6, vol: 0.2, bus: "ui", lp: 1200, delay: 0.3 }); this.caption("[wave horn]"); }
   medal() { [784, 988, 1175, 1568].forEach((f, i) => this.tone({ type: "triangle", f0: f, dur: 0.5, vol: 0.18, bus: "ui", delay: i * 0.12 })); }
-  frenzy() { this.tone({ type: "sawtooth", f0: 200, f1: 800, dur: 0.5, vol: 0.3 }); this.tone({ type: "sawtooth", f0: 300, f1: 1200, dur: 0.7, vol: 0.25 }); this.noise({ dur: 0.6, vol: 0.2, hp: 2000 }); this.caption("[FEEDING FRENZY]"); }
+  frenzy() { this.duck(0.6, 0.9); this.tone({ type: "sawtooth", f0: 200, f1: 800, dur: 0.5, vol: 0.3 }); this.tone({ type: "sawtooth", f0: 300, f1: 1200, dur: 0.7, vol: 0.25 }); this.noise({ dur: 0.6, vol: 0.2, hp: 2000 }); this.caption("[FEEDING FRENZY]"); }
 
   // ---------- continuous ambience ----------
   private buildAmbience() {
@@ -198,12 +218,19 @@ export class EngineVoice {
   private noiseF: BiquadFilterNode; private sawF: BiquadFilterNode;
   private out: GainNode;
   private coughT = 0;
+  private detune = 1;
+  private drift = 0;
 
   constructor(private ctx: AudioContext, bus: GainNode) {
     this.out = ctx.createGain(); this.out.gain.value = 0; this.out.connect(bus);
     this.thump = ctx.createOscillator(); this.thump.type = "sine"; this.thumpG = ctx.createGain(); this.thump.connect(this.thumpG).connect(this.out);
     this.saw = ctx.createOscillator(); this.saw.type = "sawtooth"; this.sawF = ctx.createBiquadFilter(); this.sawF.type = "lowpass"; this.sawG = ctx.createGain();
-    this.saw.connect(this.sawF).connect(this.sawG).connect(this.out);
+    const shaper = ctx.createWaveShaper(); // soft clip rounds the saw's buzz into a huskier engine tone
+    const curve = new Float32Array(128);
+    for (let i = 0; i < 128; i++) { const x = (i / 63.5) - 1; curve[i] = Math.tanh(x * 1.8) * 0.8; }
+    shaper.curve = curve;
+    this.detune = 0.98 + Math.random() * 0.04; // this airframe's own voice
+    this.saw.connect(shaper).connect(this.sawF).connect(this.sawG).connect(this.out);
     const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate); const d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
     this.noiseF = ctx.createBiquadFilter(); this.noiseF.type = "bandpass"; this.noiseF.Q.value = 0.7; this.noiseG = ctx.createGain();
@@ -219,8 +246,9 @@ export class EngineVoice {
     const hz = 18 + rpm * 42; // thump rate
     this.thump.frequency.setTargetAtTime(hz, t, 0.08);
     this.thumpG.gain.setTargetAtTime(0.25 + load * 0.15, t, 0.08);
-    this.saw.frequency.setTargetAtTime(hz * 4, t, 0.08);
-    this.sawF.frequency.setTargetAtTime(250 + load * 900 + boost * 800, t, 0.1);
+    this.drift += dt; 
+    this.saw.frequency.setTargetAtTime(hz * 4 * this.detune, t, 0.08);
+    this.sawF.frequency.setTargetAtTime(250 + load * 900 + boost * 800 + Math.sin(this.drift * 0.23) * 120, t, 0.1); // slow timbre drift so cruises never drone
     this.sawG.gain.setTargetAtTime(0.08 + load * 0.1, t, 0.08);
     this.noiseF.frequency.setTargetAtTime(300 + rpm * 700, t, 0.1);
     this.noiseG.gain.setTargetAtTime(0.04 + load * 0.12, t, 0.08);
@@ -267,7 +295,8 @@ const midi = (n: number) => 440 * Math.pow(2, (n - 69) / 12);
 /** Beat-synced procedural swing. Intensity 0..3 adds layers; mode switches key/tempo. */
 export class Music {
   private mode: Mode = "off";
-  intensity = 0;
+  intensity = 0; // target set by the game
+  private level = 0; // smoothed actual — layers fade in over ~a bar
   private bpm = 132;
   private nextNote = 0;
   private step = 0; // 8th notes
@@ -338,7 +367,8 @@ export class Music {
     const deg = chordProg[this.bar % 4];
     const chord = [0, 2, 4].map((i) => root + scale[(deg + i) % 7] + 12 * Math.floor((deg + i) / 7));
     const s16 = step % 16, beatIdx = Math.floor(s16 / 2), off = s16 % 2;
-    const level = this.mode === "title" ? 1 : this.intensity;
+    this.level += (this.intensity - this.level) * 0.12; // ~2 s crossfade at 8th-note rate
+    const level = this.mode === "title" ? 1 : this.level;
 
     // pending beat-synced stabs
     for (const fn of this.pending.splice(0)) fn();
@@ -352,21 +382,22 @@ export class Music {
     // brushed hats: swing 8ths
     this.hat(t, off === 0 ? 0.08 : 0.05);
     // snare brush on 2 and 4 (level ≥ 1)
-    if (level >= 1 && off === 0 && (beatIdx === 1 || beatIdx === 3)) this.brush(t, 0.22);
+    const l1 = Math.min(1, Math.max(0, level)), l2 = Math.min(1, Math.max(0, level - 1)), l3 = Math.min(1, Math.max(0, level - 2));
+    if (l1 > 0.05 && off === 0 && (beatIdx === 1 || beatIdx === 3)) this.brush(t, 0.22 * l1);
     // comping chords on the "and" of 2 and 4 (level ≥ 1), title: soft pad
-    if ((level >= 1 && off === 1 && (beatIdx === 1 || beatIdx === 3)) || (this.mode === "title" && s16 === 0)) {
-      for (const n of chord) this.voice(this.mode === "title" ? "sine" : "square", midi(n), t, this.mode === "title" ? 1.6 : 0.18, this.mode === "title" ? 0.08 : 0.07, 1400);
+    if ((l1 > 0.05 && off === 1 && (beatIdx === 1 || beatIdx === 3)) || (this.mode === "title" && s16 === 0)) {
+      for (const n of chord) this.voice(this.mode === "title" ? "sine" : "square", midi(n), t, this.mode === "title" ? 1.6 : 0.18, this.mode === "title" ? 0.08 : 0.07 * Math.max(0.3, l1), 1400);
     }
     // muted trumpet stabs (level ≥ 2): syncopated riff
-    if (level >= 2 && [3, 6, 10, 11].includes(s16)) {
+    if (l2 > 0.05 && [3, 6, 10, 11].includes(s16)) {
       const n = chord[(s16 * 7) % 3] + 12;
-      this.voice("sawtooth", midi(n), t, 0.16, 0.12, 2200, midi(n) * 0.97);
+      this.voice("sawtooth", midi(n), t, 0.16, 0.12 * l2, 2200, midi(n) * 0.97);
     }
     // frenzy/boss lead (level ≥ 3): fast arpeggio on every 8th
-    if (level >= 3) {
+    if (l3 > 0.05) {
       const n = chord[s16 % 3] + 24 - (s16 % 4 === 3 ? 12 : 0);
-      this.voice("square", midi(n), t, 0.1, 0.09, 3000);
-      if (s16 % 4 === 0) this.hat(t, 0.12, true);
+      this.voice("square", midi(n), t, 0.1, 0.09 * l3, 3000);
+      if (s16 % 4 === 0) this.hat(t, 0.12 * l3, true);
     }
     // boss: tom hits on 1 and the "and" of 3
     if (minor && (s16 === 0 || s16 === 5)) this.voice("sine", 110, t, 0.35, 0.45, 600, 60);
@@ -380,6 +411,7 @@ export class Radio {
   say(who: "you" | "tower" | "enemy", text: string, onSubtitle: (who: string, text: string) => void) {
     const now = performance.now();
     if (now < this.busy) return;
+    this.audio.duck(0.35, 0.6);
     const syll = Math.max(2, Math.min(12, Math.round(text.replace(/[^a-z]/gi, "").length / 2.6)));
     const base = who === "you" ? 220 : who === "tower" ? 170 : 330;
     let t = 0;

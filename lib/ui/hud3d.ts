@@ -68,6 +68,9 @@ export class Hud3D {
   private pauseGroup = new THREE.Group();
   private fin = new THREE.Group(); private finT = 0;
   private pausedPlate: Plate;
+  private wipeGroup = new THREE.Group();
+  private wipeTop!: THREE.Group; private wipeBottom!: THREE.Group;
+  private alertChips: { g: THREE.Group; label: Label }[] = [];
 
   constructor() {
     resolveFont();
@@ -185,6 +188,32 @@ export class Hud3D {
     this.pauseGroup.add(this.fin);
     this.pausedPlate = new Plate(340, 84, "yellow", { size: 56, color: "#1b2a44" }, 20, 0.07); this.pauseGroup.add(this.pausedPlate);
     this.pauseGroup.visible = false; this.scene.add(this.pauseGroup);
+
+    // ---- jaw-wipe: full-screen transition jaws ----
+    const buildWipeJaw = (up: boolean) => {
+      const g = new THREE.Group();
+      const bar = new THREE.Mesh(slab(4200, 1400, 30, 0, 0), mat("ink")); bar.position.y = up ? 700 : -700; g.add(bar);
+      const gum = new THREE.Mesh(slab(4200, 30, 34, 0, 0), mat("red")); gum.position.y = up ? 10 : -10; g.add(gum);
+      for (let x = -2000; x <= 2000; x += 150) {
+        const tooth = new THREE.Mesh(dart(70, 120, 26), mat("cream"));
+        tooth.rotation.z = up ? Math.PI : 0;
+        tooth.position.set(x + (up ? 0 : 75), up ? -46 : 46, 8);
+        g.add(tooth);
+      }
+      return g;
+    };
+    this.wipeTop = buildWipeJaw(true); this.wipeBottom = buildWipeJaw(false);
+    this.wipeGroup.add(this.wipeTop, this.wipeBottom);
+    this.wipeGroup.visible = false; this.wipeGroup.position.z = 120; this.scene.add(this.wipeGroup);
+
+    // ---- enemy "!" chips ----
+    for (let i = 0; i < 6; i++) {
+      const g = new THREE.Group();
+      const chip = new THREE.Mesh(hexPuck(15, 6, 2), mat("yellow")); g.add(chip);
+      const label = new Label({ size: 20, color: "#1b2a44" }); label.position.z = 10; g.add(label);
+      g.visible = false; this.scene.add(g);
+      this.alertChips.push({ g, label });
+    }
   }
 
   resize(w: number, h: number, coarse: boolean, safe: { t: number; r: number; b: number; l: number }) {
@@ -232,7 +261,7 @@ export class Hud3D {
     this.at("tl", 92, 40, this.score); this.score.position.y += bob(0); this.score.setText(String(hud.score)); this.score.tick(dt); this.score.scale.multiplyScalar(s); this.score.rotation.z = -0.035;
     this.at("tl", 212, 40, this.comboGroup); this.comboGroup.visible = hud.combo > 1;
     if (hud.combo > 1) {
-      const lit = Math.min(10, Math.round((hud.combo / 5) * 10));
+      const lit = Math.min(10, Math.round((hud.combo / 5) * 10 * hud.comboFrac + 0.49)); // drains with the combo timer
       this.comboSegs.forEach((seg, i) => { seg.material = mat(i < lit ? (hud.frenzy > 0 ? "orange" : "yellow") : "inkDark"); });
       this.comboChip.set(`x${hud.combo}`); this.comboGroup.rotation.z = Math.sin(this.t * 6) * 0.08 * (o.reducedMotion ? 0 : 1);
     }
@@ -302,6 +331,18 @@ export class Hud3D {
     });
     for (let i = hud.targets.length; i < this.markers.length; i++) this.markers[i].group.visible = false;
 
+    // enemy "!" chips (they spotted you)
+    hud.alerts.forEach((a, i) => {
+      const chip = this.alertChips[i]; if (!chip) return;
+      chip.g.visible = true;
+      const p2 = this.ndcToWorld(a.x, a.y);
+      chip.g.position.set(p2.x, p2.y + 34 * s, 25);
+      chip.g.scale.setScalar(s * (1 + Math.sin(this.t * 10 + i) * 0.12));
+      chip.g.rotation.z = Math.sin(this.t * 8 + i) * 0.15;
+      chip.label.set(a.text);
+    });
+    for (let i = hud.alerts.length; i < this.alertChips.length; i++) this.alertChips[i].g.visible = false;
+
     // message (yell) with squash-and-stretch + bits
     if (hud.msgVisible && hud.msg !== this.lastMsg) { this.lastMsg = hud.msg; this.msgScale.set(0); this.msgScale.kick(40); this.msgBits.forEach((b, i) => { b.visible = true; b.userData = { a: (i / 8) * Math.PI * 2, t: 0 }; }); }
     if (!hud.msgVisible) { this.msgScale.target = 0; this.lastMsg = ""; } else this.msgScale.target = 1;
@@ -330,11 +371,22 @@ export class Hud3D {
   setVisible(v: boolean) { this.scene.visible = v; }
 
   setMode(mode: "game" | "intro" | "pause" | "none") {
-    this.scene.visible = mode !== "none";
+    this.scene.visible = mode !== "none" || this.wipeGroup.visible;
     this.root.visible = mode === "game";
     this.cinema.visible = mode === "intro";
     this.pauseGroup.visible = mode === "pause";
     if (mode !== "intro") this.jawOpen.set(1.6);
+  }
+
+  /** Transition: jaws close over the whole screen (k 0→1), then reopen. */
+  updateWipe(k: number) {
+    this.wipeGroup.visible = k > 0.001;
+    if (!this.wipeGroup.visible) return;
+    this.scene.visible = true;
+    const H = this.h;
+    const e = 1 - Math.pow(1 - k, 2); // ease-out toward the snap
+    this.wipeTop.position.y = H / 2 + 46 - e * (H / 2 + 46);
+    this.wipeBottom.position.y = -H / 2 - 46 + e * (H / 2 + 46);
   }
 
   /** Intro: jaws close in from off-screen, caption card punches in low-left, skip hint bottom-right. */

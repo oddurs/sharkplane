@@ -42,7 +42,7 @@ export function isOnRunway(x: number, z: number) {
   return Math.abs(x) < RUNWAY.halfWidth && z > RUNWAY.zMin && z < RUNWAY.zMax;
 }
 
-export type World = { water: THREE.Mesh; clouds: { mesh: THREE.InstancedMesh; centers: THREE.Vector3[] }; update: (t: number) => void };
+export type World = { water: THREE.Mesh; clouds: { mesh: THREE.InstancedMesh; centers: THREE.Vector3[] }; leaves: THREE.MeshLambertMaterial; update: (t: number) => void };
 
 export type Detail = { terrainSeg: number; trees: number; clouds: number; waterSeg: number };
 export const DETAIL: Record<"high" | "medium" | "low", Detail> = {
@@ -66,7 +66,10 @@ export function buildWorld(scene: THREE.Scene, detail: Detail = DETAIL.high): Wo
       pos.setY(i + k, h);
       avg += h / 3;
     }
-    if (avg < -3) c.set(0x1f5fa8);
+    if (avg < -7) c.set(0x174a85);
+    else if (avg < -3) c.set(0x1f5fa8);
+    else if (avg < -0.35) c.set(0x3d86c9);
+    else if (avg < 0.2) c.set(0xfff6dc); // foam line where the sea meets the sand
     else if (avg < 0.8) c.set(0xe8d9a0);
     else if (avg < 4) c.set(0xd9c77a);
     else if (avg < 28) c.set(0x5fae3f);
@@ -87,7 +90,8 @@ export function buildWorld(scene: THREE.Scene, detail: Detail = DETAIL.high): Wo
 
   const water = buildWater(scene, detail.waterSeg);
   buildAirfield(scene);
-  buildTrees(scene, detail.trees);
+  buildTreesLeavesRef = buildTrees(scene, detail.trees);
+  const leaves = buildTreesLeavesRef;
   const clouds = buildClouds(scene, detail.clouds);
 
   const wpos = water.geometry.attributes.position as THREE.BufferAttribute;
@@ -95,6 +99,7 @@ export function buildWorld(scene: THREE.Scene, detail: Detail = DETAIL.high): Wo
   return {
     water,
     clouds,
+    leaves,
     update(t) {
       for (let i = 0; i < wpos.count; i++) {
         const x = base[i * 3], z = base[i * 3 + 2];
@@ -177,7 +182,8 @@ function buildAirfield(scene: THREE.Scene) {
   scene.add(sock);
 }
 
-function buildTrees(scene: THREE.Scene, max: number) {
+let buildTreesLeavesRef: THREE.MeshLambertMaterial;
+function buildTrees(scene: THREE.Scene, max: number): THREE.MeshLambertMaterial {
   const trunk = new THREE.CylinderGeometry(0.4, 0.6, 3, 5);
   const leaf = new THREE.ConeGeometry(2.6, 7, 6);
   const spots: THREE.Matrix4[] = [];
@@ -193,10 +199,12 @@ function buildTrees(scene: THREE.Scene, max: number) {
     spots.push(m.compose(p.set(x, h, z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * 6), s.set(sc, sc, sc)).clone());
   }
   const trunks = new THREE.InstancedMesh(trunk.translate(0, 1.5, 0), mat(0x6b4a2b), spots.length);
-  const leaves = new THREE.InstancedMesh(leaf.translate(0, 6, 0), mat(0x2e8b3a), spots.length);
+  const leafMat = new THREE.MeshLambertMaterial({ color: 0x2e8b3a, flatShading: true });
+  const leaves = new THREE.InstancedMesh(leaf.translate(0, 6, 0), leafMat, spots.length);
   spots.forEach((mtx, i) => { trunks.setMatrixAt(i, mtx); leaves.setMatrixAt(i, mtx); });
   leaves.castShadow = true;
   scene.add(trunks, leaves);
+  return leafMat;
 }
 
 function buildClouds(scene: THREE.Scene, clouds: number): { mesh: THREE.InstancedMesh; centers: THREE.Vector3[] } {
