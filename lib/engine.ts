@@ -914,6 +914,20 @@ export class Engine {
     this.raf = requestAnimationFrame(this.loop);
     const realDt = Math.min((now - this.last) / 1000, 0.05);
     this.last = now;
+    this.tick(realDt, true);
+  };
+
+  /** Debug/test hook: advance the simulation by `seconds` in fixed 60 Hz steps without waiting for frames. */
+  advance(seconds: number) {
+    const steps = Math.round(seconds * 60);
+    for (let i = 0; i < steps; i++) this.tick(1 / 60, i === steps - 1);
+    this.last = performance.now();
+  }
+
+  private clock = 0;
+  private tick(realDt: number, render: boolean) {
+    this.clock += realDt;
+    const now = this.clock * 1000;
     const phase = store.get().phase;
     const opts = store.get().options;
     this.input.update(realDt, opts);
@@ -991,6 +1005,6 @@ export class Engine {
       case "paused":
         return;
     }
-    this.post.render(this.scene, this.camera);
-  };
+    if (render) this.post.render(this.scene, this.camera);
+  }
 }

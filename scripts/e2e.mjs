@@ -61,22 +61,24 @@ await js(`localStorage.setItem('sharkplane.options', JSON.stringify({ quality: '
 await js(`location.reload()`); await sleep(5000);
 check("title renders", await js(`!!document.querySelector('.panel h1')`));
 check("engine exposed with ?debug", await js(`typeof window.__game === 'object'`));
-await js(`document.querySelector('.panel button.primary').click()`); await sleep(500);
-await key("KeyX"); await sleep(4500);
+await js(`document.querySelector('.panel button.primary').click()`); await sleep(300);
+await key("KeyX"); await sleep(200);
+const adv = async (s) => { await js(`window.__game.engine.advance(${s})`); await sleep(150); };
+await adv(4);
 check("countdown → playing", await js(`!!document.getElementById('stats')`));
-await keyEvent("keyDown", "ShiftLeft"); await sleep(5000);
+await keyEvent("keyDown", "ShiftLeft"); await adv(5);
 const speed = await js(`window.__game.player.speed`);
 check(`rolls down the runway (speed ${speed?.toFixed?.(1)})`, speed > 25);
 if (!(speed > 25)) console.log("diag:", await js(`(()=>{const e=window.__game.engine;const st=JSON.parse(localStorage.getItem('sharkplane.options')||'{}');return JSON.stringify({phase:e.constructor&&window.__game&&(document.querySelector('.panel h2')?.textContent||'none'),hidden:document.hidden,vis:document.visibilityState,throttle:e.player.throttle,state:e.player.state,time:e.time.toFixed(1),resumeIn:e.resumeIn,hitStop:e.hitStop,keys:Object.keys(e.input.keys||{}).filter(k=>e.input.keys[k]),touch:st.touch,gp:navigator.getGamepads?navigator.getGamepads().filter(Boolean).length:-1,ua:navigator.userAgent.slice(0,60)})})()`));
-await key("KeyS"); await sleep(2500);
+await keyEvent("keyDown", "KeyS"); await adv(0.5); await keyEvent("keyUp", "KeyS"); await adv(2);
 check("takes off", (await js(`window.__game.player.state`)) === "airborne");
-await js(`(()=>{const g=window.__game,p=g.player,e=g.enemies[0];e.biteCooldown=0;e.pos.copy(p.mesh.localToWorld(new p.pos.constructor(0,0,-6)));})()`); await sleep(600);
+await js(`(()=>{const g=window.__game,p=g.player,e=g.enemies[0];e.biteCooldown=0;e.pos.copy(p.mesh.localToWorld(new p.pos.constructor(0,0,-6)));})()`); await adv(0.5);
 check("eats a plane", (await js(`window.__game.score`)) >= 100);
-await key("Escape"); await sleep(300);
+await key("Escape"); await adv(0.1);
 check("pauses", (await js(`document.querySelector('.panel h2')?.textContent`)) === "PAUSED");
-await key("Escape"); await sleep(600);
+await key("Escape"); await adv(0.1);
 check("resumes", !(await js(`document.querySelector('.panel')`)));
-await js(`(()=>{window.__game.engine.timeLeft = 0.5;})()`); await sleep(5000); // resume has a 3 s countdown
+await js(`(()=>{window.__game.engine.timeLeft = 0.5;})()`); await adv(4.5); // resume has a 3 s countdown
 check("round ends with a score card", await js(`!!document.querySelector('.card')`));
 check("no console errors", errors.length === 0);
 if (errors.length) console.log(errors.join("\n"));
