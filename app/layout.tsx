@@ -16,8 +16,8 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
   manifest: `${base}/manifest.json`,
   icons: { icon: [{ url: `${base}/icon.svg`, type: "image/svg+xml" }, { url: `${base}/icon-192.png`, sizes: "192x192" }], apple: `${base}/icon-192.png` },
-  openGraph: { type: "website", url: site, siteName: "SHARKPLANE", title: "SHARKPLANE — eat the skies", description, images: [{ url: `${base}/og.png`, width: 1200, height: 630, alt: "The shark-mouthed hero plane on the runway" }] },
-  twitter: { card: "summary_large_image", title: "SHARKPLANE — eat the skies", description, images: [`${base}/og.png`] },
+  openGraph: { type: "website", url: site, siteName: "SHARKPLANE", title: "SHARKPLANE — eat the skies", description, images: [{ url: "/og.png", width: 1200, height: 630, alt: "The shark-mouthed hero plane on the runway" }] },
+  twitter: { card: "summary_large_image", title: "SHARKPLANE — eat the skies", description, images: ["/og.png"] },
   other: { "color-scheme": "dark" },
 };
 export const viewport: Viewport = { themeColor: "#1b2a44", width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false };
