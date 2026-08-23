@@ -52,7 +52,7 @@ const VK = { ShiftLeft: 16, Escape: 27, Space: 32, KeyS: 83, KeyW: 87, KeyX: 88,
 const keyEvent = (type, code) => {
   const vk = VK[code] ?? 0, letter = code.startsWith("Key") ? code.slice(3).toLowerCase() : "";
   const key = code === "ShiftLeft" ? "Shift" : code === "Escape" ? "Escape" : code === "Space" ? " " : letter;
-  return send("Input.dispatchKeyEvent", { type, code, key, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers: code === "ShiftLeft" ? 8 : 0, text: type === "keyDown" && letter ? letter : undefined });
+  return send("Input.dispatchKeyEvent", { type: type === "keyDown" && !letter ? "rawKeyDown" : type, code, key, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers: code === "ShiftLeft" ? 8 : 0, text: type === "keyDown" && letter ? letter : undefined });
 };
 const key = async (code) => { await keyEvent("keyDown", code); await keyEvent("keyUp", code); };
 await send("Runtime.enable");
