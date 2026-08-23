@@ -122,7 +122,7 @@ await key("Escape"); await adv(0.1);
 check("resumes", !(await js(`document.querySelector('.panel')`)));
 await js(`(()=>{window.__game.engine.timeLeft = 0.5;})()`); await adv(4.5); // resume has a 3 s countdown
 check("round ends with a score card", await js(`!!document.querySelector('.card')`));
-check("3-D HUD scene rendered", (await js(`window.__game.engine.hud3d.scene.children.length`)) > 10);
+check("3-D HUD scene rendered", (await js(`window.__game.engine.hud3d.root.children.length`)) > 10);
 check("no console errors", errors.length === 0);
 if (errors.length) console.log(errors.join("\n"));
 
