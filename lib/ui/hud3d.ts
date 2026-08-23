@@ -71,6 +71,11 @@ export class Hud3D {
   private wipeGroup = new THREE.Group();
   private wipeTop!: THREE.Group; private wipeBottom!: THREE.Group;
   private alertChips: { g: THREE.Group; label: Label }[] = [];
+  // 3-D menus (title / pause)
+  private menuGroup = new THREE.Group();
+  private wordmark: Plate; private tagline: Plate; private progressLine: Plate;
+  private buttons: { plate: Plate; hover: Spring; id: string }[] = [];
+  private raycaster = new THREE.Raycaster();
 
   constructor() {
     resolveFont();
@@ -188,6 +193,19 @@ export class Hud3D {
     this.pauseGroup.add(this.fin);
     this.pausedPlate = new Plate(340, 84, "yellow", { size: 56, color: "#1b2a44" }, 20, 0.07); this.pauseGroup.add(this.pausedPlate);
     this.pauseGroup.visible = false; this.scene.add(this.pauseGroup);
+
+    // ---- 3-D menus ----
+    this.wordmark = new Plate(720, 130, "yellow", { size: 92, color: "#ffd84a", stroke: "#b3261e" }, 26, 0.05);
+    this.tagline = new Plate(620, 40, "cream", { size: 17, color: "#1b2a44", font: "body" }, 8, 0.03);
+    this.progressLine = new Plate(420, 30, "ink", { size: 13, color: "#8a96a8", font: "body" }, 6, 0.03);
+    this.menuGroup.add(this.wordmark, this.tagline, this.progressLine);
+    for (let i = 0; i < 5; i++) {
+      const plate = new Plate(340, 58, "ink", { size: 24, color: "#fff" }, 16, 0.06);
+      plate.body.userData.menuIndex = i;
+      this.menuGroup.add(plate);
+      this.buttons.push({ plate, hover: new Spring(0), id: "" });
+    }
+    this.menuGroup.visible = false; this.scene.add(this.menuGroup);
 
     // ---- jaw-wipe: full-screen transition jaws ----
     const buildWipeJaw = (up: boolean) => {
@@ -370,13 +388,59 @@ export class Hud3D {
   /** Hide everything (title / score card / intro). */
   setVisible(v: boolean) { this.scene.visible = v; }
 
-  setMode(mode: "game" | "intro" | "pause" | "none") {
+  setMode(mode: "game" | "intro" | "pause" | "none" | "title") {
     this.scene.visible = mode !== "none" || this.wipeGroup.visible;
     this.root.visible = mode === "game";
     this.cinema.visible = mode === "intro";
     this.pauseGroup.visible = mode === "pause";
+    this.menuGroup.visible = mode === "title" || mode === "pause";
     if (mode !== "intro") this.jawOpen.set(1.6);
   }
+
+  /** Lay out and animate the 3-D menu buttons. hoverId highlights; returns nothing. */
+  updateMenu(dt: number, mode: "title" | "pause", items: { id: string; label: string; primary?: boolean }[], hoverId: string, extras: { tagline?: string; progress?: string }) {
+    this.t += dt;
+    const s = this.ui, H = this.h;
+    const isTitle = mode === "title";
+    this.wordmark.visible = this.tagline.visible = this.progressLine.visible = isTitle;
+    if (isTitle) {
+      this.wordmark.setText("SHARKPLANE"); this.wordmark.tick(dt);
+      this.wordmark.position.set(0, H * 0.22, 60); this.wordmark.scale.multiplyScalar(s); this.wordmark.rotation.z = -0.03 + Math.sin(this.t * 0.8) * 0.008; this.wordmark.rotation.y = Math.sin(this.t * 0.5) * 0.05;
+      this.tagline.setText(extras.tagline ?? ""); this.tagline.tick(dt);
+      this.tagline.position.set(0, H * 0.22 - 92 * s, 40); this.tagline.scale.multiplyScalar(s); this.tagline.rotation.z = 0.012;
+      this.progressLine.visible = !!extras.progress;
+      if (extras.progress) { this.progressLine.setText(extras.progress); this.progressLine.tick(dt); this.progressLine.position.set(0, H * 0.22 - 92 * s - (items.length * 66 + 60) * s, 30); this.progressLine.scale.multiplyScalar(s * 0.9); }
+    }
+    const top = isTitle ? H * 0.22 - 150 * s : H / 2 - 200 * s;
+    items.forEach((it, i) => {
+      const b = this.buttons[i]; if (!b) return;
+      b.plate.visible = true; b.id = it.id;
+      b.hover.target = hoverId === it.id ? 1 : 0;
+      const hv = b.hover.update(dt);
+      b.plate.setText(it.label); b.plate.tick(dt);
+      b.plate.body.material = mat(it.primary ? (hoverId === it.id ? "white" : "yellow") : hoverId === it.id ? "orange" : "ink");
+      if (b.plate.label) b.plate.label.material.color.set(it.primary ? 0x1b2a44 : 0xffffff);
+      b.plate.position.set(Math.sin(this.t * 1.1 + i) * 3 * (1 - hv), top - i * 66 * s, 40 + hv * 30);
+      b.plate.scale.multiplyScalar(s * (1 + hv * 0.07));
+      b.plate.rotation.z = (i % 2 ? 0.012 : -0.015) - hv * 0.02;
+      b.plate.rotation.y = Math.sin(this.t * 0.7 + i * 1.3) * 0.04 + hv * 0.08;
+    });
+    for (let i = items.length; i < this.buttons.length; i++) this.buttons[i].plate.visible = false;
+  }
+
+  /** Raycast a pointer position (px from top-left) against the menu buttons → button id or null. */
+  pickMenu(x: number, y: number): string | null {
+    if (!this.menuGroup.visible) return null;
+    const ndc = new THREE.Vector2((x / this.w) * 2 - 1, -(y / this.h) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const hits = this.raycaster.intersectObjects(this.buttons.filter((b) => b.plate.visible).map((b) => b.plate.body), false);
+    if (!hits.length) return null;
+    const idx = hits[0].object.userData.menuIndex as number;
+    return this.buttons[idx]?.id ?? null;
+  }
+
+  /** Press feedback on a 3-D button. */
+  pressMenu(id: string) { const b = this.buttons.find((x) => x.id === id); b?.plate.pop.set(0.9); if (b) b.plate.pop.target = 1; }
 
   /** Transition: jaws close over the whole screen (k 0→1), then reopen. */
   updateWipe(k: number) {

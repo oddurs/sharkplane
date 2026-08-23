@@ -127,6 +127,8 @@ export class Engine {
   private crashTimer = 0; private crashPos = new THREE.Vector3(); private crashYaw = 0;
   private bigUntil = -99; private crashFade = 0;
   private wipeT = 0; private wipeDir = 0; private wipeAction: (() => void) | null = null;
+  private menuHover = "";
+  private pointer = { x: -1, y: -1 };
   private gForce = 0; private lastVel = new THREE.Vector3();
   private tier: Tier = "high";
   private tiltInput: Tilt | null = null;
@@ -177,6 +179,8 @@ export class Engine {
     removeEventListener("resize", this.onResize);
     document.removeEventListener("visibilitychange", this.onHidden);
     removeEventListener("pointerdown", this.kickAudio); removeEventListener("keydown", this.kickAudio); removeEventListener("touchend", this.kickAudio);
+    this.renderer.domElement.removeEventListener("pointermove", this.onMenuMove);
+    this.renderer.domElement.removeEventListener("pointerdown", this.onMenuClick);
     this.tiltInput?.dispose();
     this.input.dispose();
     this.sound?.dispose();
@@ -246,6 +250,35 @@ export class Engine {
   }
 
   private onHidden = () => { if (document.hidden && store.get().phase === "playing") this.pause(); };
+  private menuItems(): { id: string; label: string; primary?: boolean }[] {
+    const phase = store.get().phase;
+    if (phase === "title") return [{ id: "sortie", label: tr("sortie"), primary: true }, { id: "controls", label: tr("controls") }, { id: "options", label: tr("options") }];
+    return [{ id: "resume", label: tr("resume"), primary: true }, { id: "restart", label: tr("restart") }, { id: "controls", label: tr("controls") }, { id: "options", label: tr("options") }, { id: "quit", label: tr("quit") }];
+  }
+  private menuActive() { const ph = store.get().phase; return (ph === "title" || ph === "paused") && store.get().menuPage === "main"; }
+  /** Activate a 3-D menu button (also used by the keyboard mirror + e2e). */
+  menuAction(id: string) {
+    this.hud3d.pressMenu(id);
+    if (id === "sortie") { this.ui("confirm"); this.startRound(); }
+    else if (id === "resume") { this.ui("confirm"); this.resume(); }
+    else if (id === "restart") { this.ui("confirm"); this.restart(); }
+    else if (id === "quit") { this.ui("back"); this.quitToTitle(); }
+    else if (id === "controls" || id === "options") { this.ui("confirm"); store.set({ menuPage: id }); }
+  }
+  setMenuHover(id: string) { if (id !== this.menuHover) { this.menuHover = id; if (id) this.sound?.hover(); } }
+  private onMenuMove = (e: PointerEvent) => {
+    this.pointer.x = e.clientX; this.pointer.y = e.clientY;
+    if (!this.menuActive()) return;
+    const id = this.hud3d.pickMenu(e.clientX, e.clientY) ?? "";
+    this.renderer.domElement.style.cursor = id ? "pointer" : "";
+    this.setMenuHover(id);
+  };
+  private onMenuClick = (e: PointerEvent) => {
+    if (!this.menuActive()) return;
+    const id = this.hud3d.pickMenu(e.clientX, e.clientY);
+    if (id) this.menuAction(id);
+  };
+
   private ensureSound() {
     if (this.sound) { this.sound.resume(); return; }
     void isIOS; void touchState;
@@ -1131,7 +1164,8 @@ export class Engine {
     if (render) {
       this.renderer.clear();
       this.post.render(this.scene, this.camera);
-      const mode = phase === "playing" || phase === "countdown" ? "game" : phase === "intro" ? "intro" : phase === "paused" ? "pause" : "none";
+      const menuMain = store.get().menuPage === "main";
+      const mode = phase === "playing" || phase === "countdown" ? "game" : phase === "intro" ? "intro" : phase === "paused" ? "pause" : phase === "title" && menuMain ? "title" : "none";
       this.hud3d.setMode(mode);
       if (mode === "game") {
         const o = store.get().options;
@@ -1142,6 +1176,14 @@ export class Engine {
         this.hud3d.updateIntro(realDt, Math.min(1, this.introT / 5.5), LIVERIES[this.liveryIndex].name, tr("yourRide"), tr("skip"));
       } else if (mode === "pause") {
         this.hud3d.updatePause(realDt, tr("paused"));
+        if (menuMain) this.hud3d.updateMenu(realDt, "pause", this.menuItems(), this.menuHover, {});
+        else this.hud3d.setMode("none");
+      } else if (mode === "title") {
+        const pr = store.get().progress;
+        this.hud3d.updateMenu(realDt, "title", this.menuItems(), this.menuHover, {
+          tagline: `${tr("tagline")} ${tr("eatThem")}`,
+          progress: pr.totalEaten > 0 ? `${pr.bestScore > 0 ? `BEST ${pr.bestScore} · ` : ""}${pr.totalEaten} PLANES EATEN · ${pr.medals} MEDALS` : "",
+        });
       }
       this.hud3d.updateWipe(Math.max(0, Math.min(1, this.wipeT)));
       if (mode !== "none" || this.wipeT > 0) {

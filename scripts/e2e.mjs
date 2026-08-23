@@ -67,9 +67,9 @@ const check = (name, ok) => { checks.push([name, !!ok]); console.log(`${ok ? "âœ
 
 await js(`localStorage.setItem('sharkplane.options', JSON.stringify({ quality: 'low', qualitySet: true, tutorialDone: true, touch: ${MOBILE}, scheme: 'anywhere', autoThrottle: true }))`);
 await js(`location.reload()`); await sleep(5000);
-check("title renders", await js(`!!document.querySelector('.panel h1')`));
+check("title renders in 3-D", await js(`window.__game.engine.hud3d['menuGroup'].visible`));
 check("engine exposed with ?debug", await js(`typeof window.__game === 'object'`));
-await js(`document.querySelector('.panel button.primary').click()`); await sleep(300);
+await js(`window.__game.engine.menuAction('sortie')`); await sleep(300);
 await key("KeyX"); await sleep(200);
 const adv = async (s) => { await js(`window.__game.engine.advance(${s})`); await sleep(150); };
 await adv(4);
@@ -96,7 +96,7 @@ if (MOBILE) {
   // pause via the on-screen button
   const pz = await js(`(()=>{const r=document.getElementById('pause-btn').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2]})()`);
   await touch("touchStart", [{ x: pz[0], y: pz[1] }]); await touch("touchEnd", []); await adv(0.1);
-  check("pause button pauses", (await js(`document.querySelector('.panel h2')?.textContent`)) === "PAUSED");
+  check("pause button pauses", (await js(`window.__game.phase`)) === "paused");
   await shot("mobile_pause");
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true, screenOrientation: { type: "portraitPrimary", angle: 0 } }); await sleep(300);
   check("portrait shows the rotate card", await js(`getComputedStyle(document.getElementById('rotate')).display === 'grid'`));
@@ -117,9 +117,9 @@ check("takes off", (await js(`window.__game.player.state`)) === "airborne");
 await js(`(()=>{const g=window.__game,p=g.player,e=g.enemies[0];e.biteCooldown=0;e.pos.copy(p.mesh.localToWorld(new p.pos.constructor(0,0,-6)));})()`); await adv(0.5);
 check("eats a plane", (await js(`window.__game.score`)) >= 100);
 await key("Escape"); await adv(0.1);
-check("pauses", (await js(`document.querySelector('.panel h2')?.textContent`)) === "PAUSED");
+check("pauses", (await js(`window.__game.phase`)) === "paused");
 await key("Escape"); await adv(0.1);
-check("resumes", !(await js(`document.querySelector('.panel')`)));
+check("resumes", (await js(`window.__game.phase`)) === "playing" || (await js(`window.__game.hud.resumeIn`)) > 0);
 await js(`(()=>{window.__game.engine.timeLeft = 0.5;})()`); await adv(4.5); // resume has a 3 s countdown
 check("round ends with a score card", await js(`!!document.querySelector('.card')`));
 check("3-D HUD scene rendered", (await js(`window.__game.engine.hud3d.root.children.length`)) > 10);

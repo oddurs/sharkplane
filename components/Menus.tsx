@@ -14,7 +14,6 @@ export default function Menus({ engine }: { engine: RefObject<Engine | null> }) 
   const e = () => engine.current!;
   const lang = useGame((s) => s.options.lang); void lang; // re-render on language change
   if (phase === "playing" || phase === "countdown" || phase === "intro") return null;
-  const go = (page: "controls" | "options") => { engine.current?.ui("confirm"); store.set({ menuPage: page }); };
 
   const back = () => { engine.current?.ui("back"); store.set({ menuPage: "main" }); };
   const body =
@@ -24,34 +23,21 @@ export default function Menus({ engine }: { engine: RefObject<Engine | null> }) 
     phase === "roundOver" ? <ScoreCard /> :
     <Pause />;
 
-  function Title() {
-    const progress = useGame((s) => s.progress);
+  // Title and pause main menus render in 3-D (lib/ui/hud3d.ts); this invisible mirror keeps them
+  // keyboard-navigable and visible to screen readers. Focusing a mirror button lights its 3-D twin.
+  function Mirror({ ids }: { ids: string[] }) {
     return (
-      <>
-        <h1>SHARKPLANE</h1>
-        <p>{t("tagline")} <b>{t("eatThem")}</b></p>
-        <button className="primary" autoFocus onClick={() => { e().ui("confirm"); e().startRound(); }}>{t("sortie")}</button>
-        <button onClick={() => go("controls")}>{t("controls")}</button>
-        <button onClick={() => go("options")}>{t("options")}</button>
-        <p className="muted">
-          {progress.bestScore > 0 ? `BEST ${progress.bestScore} · ` : ""}{progress.totalEaten} PLANES EATEN · {progress.medals} MEDALS
-        </p>
-        <p className="muted tiny">{t("daily")}</p>
-      </>
+      <div className="menu-mirror" role="menu" aria-label="Game menu">
+        {ids.map((id, i) => (
+          <button key={id} autoFocus={i === 0} onFocus={() => e().setMenuHover(id)} onBlur={() => e().setMenuHover("")} onClick={() => e().menuAction(id)}>
+            {t(id as Parameters<typeof t>[0])}
+          </button>
+        ))}
+      </div>
     );
   }
-  function Pause() {
-    return (
-      <>
-        <h2 className="sr-only">{t("paused")}</h2>{/* the 3-D PAUSED plate renders behind the menu */}
-        <button className="primary" autoFocus onClick={() => { e().ui("confirm"); e().resume(); }}>{t("resume")}</button>
-        <button onClick={() => { e().ui("confirm"); e().restart(); }}>{t("restart")}</button>
-        <button onClick={() => go("controls")}>{t("controls")}</button>
-        <button onClick={() => go("options")}>{t("options")}</button>
-        <button onClick={() => { e().ui("back"); e().quitToTitle(); }}>{t("quit")}</button>
-      </>
-    );
-  }
+  function Title() { return <Mirror ids={["sortie", "controls", "options"]} />; }
+  function Pause() { return <Mirror ids={["resume", "restart", "controls", "options", "quit"]} />; }
   function ScoreCard() {
     const r = store.get().round;
     const [copied, setCopied] = useState(false);
@@ -94,7 +80,7 @@ export default function Menus({ engine }: { engine: RefObject<Engine | null> }) 
   }
 
   return (
-    <div id="menu" className={phase === "paused" ? "dim" : ""} onMouseOver={(ev) => { if ((ev.target as HTMLElement).tagName === "BUTTON") engine.current?.ui("hover"); }}>
+    <div id="menu" className={`${phase === "paused" ? "dim" : ""} ${page === "main" && (phase === "title" || phase === "paused") ? "passthrough" : ""}`} onMouseOver={(ev) => { if ((ev.target as HTMLElement).tagName === "BUTTON" && page !== "main") engine.current?.ui("hover"); }}>
       <div className="panel">{body}</div>
     </div>
   );

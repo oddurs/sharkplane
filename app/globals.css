@@ -287,3 +287,8 @@ canvas { touch-action: none; }
 .card .row:nth-child(7) { animation-delay: .53s; }
 @keyframes row-in { from { opacity: 0; transform: translateX(-18px); } }
 @media (prefers-reduced-motion: reduce) { .card .row { animation: none; } }
+
+#menu.passthrough { pointer-events: none; background: none; }
+#menu.passthrough .panel { animation: none; transform: none; padding: 0; }
+.menu-mirror { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.menu-mirror button { pointer-events: auto; }
