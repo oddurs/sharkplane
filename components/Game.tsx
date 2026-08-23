@@ -69,7 +69,11 @@ export default function Game() {
       } catch (e) { setStatus({ kind: "error", message: e instanceof Error ? e.message : String(e) }); }
     });
     if (process.env.NODE_ENV === "production" && "serviceWorker" in navigator) {
-      navigator.serviceWorker.register(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/sw.js`).catch(() => {});
+      // versioned URL → a new build installs a new worker, which drops the old cache; reload once it takes over
+      const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+      navigator.serviceWorker.register(`${base}/sw.js?v=${process.env.NEXT_PUBLIC_BUILD_SHA}`, { updateViaCache: "none" }).then((reg) => reg.update().catch(() => {})).catch(() => {});
+      let hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController) location.reload(); hadController = true; });
     }
     return () => { cancelAnimationFrame(id); removeEventListener("error", onError); removeEventListener("unhandledrejection", onError); engine?.dispose(); engineRef.current = null; };
   }, []);
