@@ -144,7 +144,7 @@ function airframe(g: THREE.Group, hull: Section[], top: number, belly: number, o
     blade.add(root, tip); blade.rotation.z = (i * Math.PI * 2) / 3; prop.add(blade);
   }
   prop.position.z = opts.propZ; g.add(prop);
-  const propDisc = new THREE.Mesh(new THREE.CircleGeometry(3.1, 18), new THREE.MeshBasicMaterial({ color: 0xbbbbbb, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false }));
+  const propDisc = new THREE.Mesh(new THREE.CircleGeometry(2.6, 18), new THREE.MeshBasicMaterial({ color: 0xbbbbbb, transparent: true, opacity: 0.1, side: THREE.BackSide, depthWrite: false })); // back-side only: invisible from the chase camera
   propDisc.position.z = opts.propZ; propDisc.visible = false; g.add(propDisc);
 
   // exhaust stacks along the cowl sides

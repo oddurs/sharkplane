@@ -57,6 +57,7 @@ export class Hud3D {
   private subtitle: Plate; private subtitleWho: THREE.Mesh; private subtitleSlide = new Spring(0);
   private caption: Plate; private toast: Plate; private muted: Plate;
   private lastBoss = 0;
+  private distClock = 0; private distTick = false;
 
   constructor() {
     resolveFont();
@@ -160,7 +161,8 @@ export class Hud3D {
   /** Position in CSS px from an anchor (x right, y down), returns world coords (y up). */
   private at(anchor: Anchor, x: number, y: number, out: THREE.Object3D) {
     const s = this.ui;
-    const L = -this.w / 2 + this.safe.l, R = this.w / 2 - this.safe.r, T = this.h / 2 - this.safe.t, B = -this.h / 2 + this.safe.b;
+    const inset = 14; // covers the worst-case lean/shake excursion so corner plates never leave the screen
+    const L = -this.w / 2 + this.safe.l + inset, R = this.w / 2 - this.safe.r - inset, T = this.h / 2 - this.safe.t - inset, B = -this.h / 2 + this.safe.b + inset;
     const px = anchor.endsWith("l") ? L + x * s : anchor.endsWith("r") ? R - x * s : (L + R) / 2 + x * s;
     const py = anchor.startsWith("t") ? T - y * s : B + y * s;
     out.position.set(px + this.shake.x, py + this.shake.y, out.position.z);
@@ -175,11 +177,14 @@ export class Hud3D {
   private lean = new Spring(0, 0, 60, 10); private lag = new Spring(0, 0, 90, 12);
   update(hud: Hud, o: Options, dt: number) {
     this.t += dt;
+    // distance readouts update at 5 Hz in ~5/10 m steps so they read as instruments, not noise
+    this.distClock += dt; this.distTick = this.distClock >= 0.2; if (this.distTick) this.distClock = 0;
+    const qDist = (d: number) => (d < 100 ? Math.round(d / 5) * 5 : Math.round(d / 10) * 10);
     // cockpit inertia: the whole HUD leans with bank and sags under g
     const motion = o.reducedMotion ? 0 : 1;
-    this.lean.target = -hud.bank * 0.05 * motion; this.lag.target = -hud.gForce * 10 * motion;
+    this.lean.target = -hud.bank * 0.018 * motion; this.lag.target = -hud.gForce * 6 * motion;
     this.root.rotation.z = this.lean.update(dt); this.root.position.y = this.lag.update(dt);
-    this.root.rotation.y = -hud.bank * 0.03 * motion;
+    this.root.rotation.y = -hud.bank * 0.02 * motion;
     const s = this.ui, bob = (i: number) => Math.sin(this.t * 1.3 + i) * 0.6 * (o.reducedMotion ? 0 : 1);
     const mm = Math.floor(hud.timeLeft / 60), ss = String(hud.timeLeft % 60).padStart(2, "0");
 
@@ -198,7 +203,7 @@ export class Hud3D {
     this.at("tc", 0, 74, this.wave); this.wave.setText(`${hud.frenzy > 0 ? `FRENZY ${Math.ceil(hud.frenzy)}s` : `WAVE ${hud.wave}`}${hud.weather === "rain" ? " ☂" : ""}`); this.wave.tick(dt); this.wave.scale.multiplyScalar(s); this.wave.body.material = mat(hud.frenzy > 0 ? "orange" : "yellow");
     this.at("tc", 0, 122, this.compass); this.compass.scale.multiplyScalar(s);
     this.compassArrow.rotation.set(-hud.lockPitch * 0.9, 0, -hud.compassAngle); this.compassArrow.material = mat(hud.compassNear ? "orange" : "white");
-    this.lockChip.setText(hud.lockDist !== null ? `${hud.lockDist}m` : ""); this.lockChip.tick(dt);
+    if (this.distTick || !this.lockChip.text) this.lockChip.setText(hud.lockDist !== null ? `${qDist(hud.lockDist)}m` : ""); this.lockChip.tick(dt);
 
     // top-right: eaten + objectives + boss
     this.at("tr", this.coarse ? 200 : 130, 32, this.eaten); this.eaten.setText(`PLANES EATEN: ${hud.eaten}`); this.eaten.tick(dt); this.eaten.scale.multiplyScalar(s); this.eaten.rotation.z = 0.03;
@@ -250,7 +255,7 @@ export class Hud3D {
       const size = (tg.kind === "bomber" ? 34 : 26) * s * ls;
       m.corners.forEach((c, ci) => { c.visible = tg.onScreen; c.material = mat(col); const sx = ci === 0 || ci === 3 ? -1 : 1, sy = ci < 2 ? 1 : -1; c.position.set(sx * size, sy * size, 0); c.scale.setScalar(s * (tg.locked ? 1.2 : 1)); });
       m.dart.visible = !tg.onScreen; m.dart.material = mat(col); m.dart.rotation.z = -tg.angle - Math.PI / 2; m.dart.scale.setScalar(s * (tg.locked ? 1.3 : 1));
-      m.label.set(`${tg.dist}m${tg.onScreen && Math.abs(tg.dAlt) > 15 ? (tg.dAlt > 0 ? ` ▲${tg.dAlt}` : ` ▼${-tg.dAlt}`) : ""}`); m.label.position.y = -(size + 16); m.label.scale.multiplyScalar(s);
+      if (this.distTick || !m.label.text) m.label.set(`${qDist(tg.dist)}m${tg.onScreen && Math.abs(tg.dAlt) > 15 ? (tg.dAlt > 0 ? ` ▲${Math.round(tg.dAlt / 10) * 10}` : ` ▼${Math.round(-tg.dAlt / 10) * 10}`) : ""}`); m.label.position.y = -(size + 16); m.label.scale.multiplyScalar(s);
       m.group.rotation.z = tg.locked ? Math.sin(this.t * 5) * 0.06 : 0;
     });
     for (let i = hud.targets.length; i < this.markers.length; i++) this.markers[i].group.visible = false;

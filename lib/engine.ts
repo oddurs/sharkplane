@@ -1013,6 +1013,14 @@ export class Engine {
     const opts = store.get().options;
     this.input.update(realDt, opts);
     this.world.update(now / 1000);
+    // fade the cloud layer out when the camera is inside a puff so it never white-out the view
+    {
+      let nearest = Infinity;
+      for (const c of this.world.clouds.centers) { const d = c.distanceToSquared(this.camera.position); if (d < nearest) nearest = d; }
+      const m = this.world.clouds.mesh.material as THREE.MeshLambertMaterial;
+      const inside = THREE.MathUtils.smoothstep(Math.sqrt(nearest), 18, 55);
+      m.opacity = THREE.MathUtils.lerp(m.opacity, 0.15 + 0.8 * inside, 0.15);
+    }
     this.sky.follow(this.player.pos);
     const sock = this.scene.getObjectByName("sock");
     if (sock) sock.rotation.y = Math.atan2(this.wind.x, this.wind.z) + Math.sin(now / 700) * 0.25;
@@ -1095,7 +1103,7 @@ export class Engine {
       this.hud3d.setVisible(showHud);
       if (showHud) {
         const o = store.get().options;
-        const sh = this.shake * o.shake * (o.reducedMotion ? 0 : 1) * 4;
+        const sh = this.shake * o.shake * (o.reducedMotion ? 0 : 1) * 2;
         this.hud3d.setShake((Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh);
         this.hud3d.update(store.get().hud, o, realDt);
         this.renderer.clearDepth();

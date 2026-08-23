@@ -42,7 +42,7 @@ export function isOnRunway(x: number, z: number) {
   return Math.abs(x) < RUNWAY.halfWidth && z > RUNWAY.zMin && z < RUNWAY.zMax;
 }
 
-export type World = { water: THREE.Mesh; update: (t: number) => void };
+export type World = { water: THREE.Mesh; clouds: { mesh: THREE.InstancedMesh; centers: THREE.Vector3[] }; update: (t: number) => void };
 
 export type Detail = { terrainSeg: number; trees: number; clouds: number; waterSeg: number };
 export const DETAIL: Record<"high" | "medium" | "low", Detail> = {
@@ -88,12 +88,13 @@ export function buildWorld(scene: THREE.Scene, detail: Detail = DETAIL.high): Wo
   const water = buildWater(scene, detail.waterSeg);
   buildAirfield(scene);
   buildTrees(scene, detail.trees);
-  buildClouds(scene, detail.clouds);
+  const clouds = buildClouds(scene, detail.clouds);
 
   const wpos = water.geometry.attributes.position as THREE.BufferAttribute;
   const base = wpos.array.slice() as Float32Array;
   return {
     water,
+    clouds,
     update(t) {
       for (let i = 0; i < wpos.count; i++) {
         const x = base[i * 3], z = base[i * 3 + 2];
@@ -198,7 +199,7 @@ function buildTrees(scene: THREE.Scene, max: number) {
   scene.add(trunks, leaves);
 }
 
-function buildClouds(scene: THREE.Scene, clouds: number) {
+function buildClouds(scene: THREE.Scene, clouds: number): { mesh: THREE.InstancedMesh; centers: THREE.Vector3[] } {
   const puff = new THREE.IcosahedronGeometry(1, 0);
   const count = clouds * 5;
   const inst = new THREE.InstancedMesh(puff, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true, transparent: true, opacity: 0.95 }), count);
@@ -206,8 +207,10 @@ function buildClouds(scene: THREE.Scene, clouds: number) {
   let seed = 777;
   const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
   let i = 0;
+  const centers: THREE.Vector3[] = [];
   for (let c = 0; c < clouds; c++) {
     const cx = (rnd() - 0.5) * 2800, cy = 140 + rnd() * 140, cz = (rnd() - 0.5) * 2800;
+    centers.push(new THREE.Vector3(cx, cy, cz));
     for (let j = 0; j < 5; j++) {
       const sc = 7 + rnd() * 9;
       p.set(cx + (rnd() - 0.5) * 34, cy + (rnd() - 0.5) * 6, cz + (rnd() - 0.5) * 16);
@@ -216,4 +219,5 @@ function buildClouds(scene: THREE.Scene, clouds: number) {
   }
   inst.castShadow = true;
   scene.add(inst);
+  return { mesh: inst, centers };
 }
