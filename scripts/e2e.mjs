@@ -48,12 +48,8 @@ ws.onmessage = (ev) => {
 };
 const send = (method, params = {}) => new Promise((r) => { const i = ++id; pending[i] = r; ws.send(JSON.stringify({ id: i, method, params })); });
 const js = (expr) => send("Runtime.evaluate", { expression: expr, returnByValue: true }).then((r) => { if (r.exceptionDetails) errors.push(`JS(${expr.slice(0, 60)}): ${r.exceptionDetails.text}`); return r.result?.value; });
-const VK = { ShiftLeft: 16, Escape: 27, Space: 32, KeyS: 83, KeyW: 87, KeyX: 88, KeyA: 65, KeyD: 68 };
-const keyEvent = (type, code) => {
-  const vk = VK[code] ?? 0, letter = code.startsWith("Key") ? code.slice(3).toLowerCase() : "";
-  const key = code === "ShiftLeft" ? "Shift" : code === "Escape" ? "Escape" : code === "Space" ? " " : letter;
-  return send("Input.dispatchKeyEvent", { type: type === "keyDown" && !letter ? "rawKeyDown" : type, code, key, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers: code === "ShiftLeft" ? 8 : 0, text: type === "keyDown" && letter ? letter : undefined });
-};
+// Dispatch DOM keyboard events directly (CDP key synthesis is unreliable on headless Linux); Input listens on window by e.code.
+const keyEvent = (type, code) => js(`window.dispatchEvent(new KeyboardEvent(${JSON.stringify(type)}, { code: ${JSON.stringify(code)}, key: ${JSON.stringify(code === "ShiftLeft" ? "Shift" : code === "Space" ? " " : code)}, bubbles: true, cancelable: true })); 0`);
 const key = async (code) => { await keyEvent("keyDown", code); await keyEvent("keyUp", code); };
 await send("Runtime.enable");
 await send("Page.enable"); await send("Page.bringToFront"); await send("Emulation.setFocusEmulationEnabled", { enabled: true });
