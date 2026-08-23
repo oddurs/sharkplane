@@ -1,0 +1,8 @@
+name: Feature / tuning idea
+description: Make the shark happier
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes: { label: The idea, description: What and why — what does it make more fun? }
+    validations: { required: true }

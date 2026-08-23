@@ -1,0 +1,173 @@
+"use client";
+
+import { useState, type RefObject } from "react";
+import type { Engine } from "@/lib/engine";
+import { LIVERIES } from "@/lib/models";
+import { store, useGame, type Options } from "@/lib/store";
+import { t, LANGS } from "@/lib/i18n";
+import LiveryPreview from "./LiveryPreview";
+
+export default function Menus({ engine }: { engine: RefObject<Engine | null> }) {
+  const phase = useGame((s) => s.phase);
+  const page = useGame((s) => s.menuPage);
+  const e = () => engine.current!;
+  const lang = useGame((s) => s.options.lang); void lang; // re-render on language change
+  if (phase === "playing" || phase === "countdown" || phase === "intro") return null;
+  const go = (page: "controls" | "options") => { engine.current?.ui("confirm"); store.set({ menuPage: page }); };
+
+  const back = () => { engine.current?.ui("back"); store.set({ menuPage: "main" }); };
+  const body =
+    page === "controls" ? <Controls onBack={back} /> :
+    page === "options" ? <OptionsPage onBack={back} engine={engine} /> :
+    phase === "title" ? <Title /> :
+    phase === "roundOver" ? <ScoreCard /> :
+    <Pause />;
+
+  function Title() {
+    const progress = useGame((s) => s.progress);
+    return (
+      <>
+        <h1>SHARKPLANE</h1>
+        <p>{t("tagline")} <b>{t("eatThem")}</b></p>
+        <button className="primary" autoFocus onClick={() => { e().ui("confirm"); e().startRound(); }}>{t("sortie")}</button>
+        <button onClick={() => go("controls")}>{t("controls")}</button>
+        <button onClick={() => go("options")}>{t("options")}</button>
+        <p className="muted">
+          {progress.bestScore > 0 ? `BEST ${progress.bestScore} · ` : ""}{progress.totalEaten} PLANES EATEN · {progress.medals} MEDALS
+        </p>
+        <p className="muted tiny">{t("daily")}</p>
+      </>
+    );
+  }
+  function Pause() {
+    return (
+      <>
+        <h2>{t("paused")}</h2>
+        <button className="primary" autoFocus onClick={() => { e().ui("confirm"); e().resume(); }}>{t("resume")}</button>
+        <button onClick={() => { e().ui("confirm"); e().restart(); }}>{t("restart")}</button>
+        <button onClick={() => go("controls")}>{t("controls")}</button>
+        <button onClick={() => go("options")}>{t("options")}</button>
+        <button onClick={() => { e().ui("back"); e().quitToTitle(); }}>{t("quit")}</button>
+      </>
+    );
+  }
+  function ScoreCard() {
+    const r = store.get().round;
+    const [copied, setCopied] = useState(false);
+    const share = `SHARKPLANE ${r.dateKey} · ${r.score} pts · ${r.eaten} eaten · best combo x${r.bestCombo}${r.medal !== "none" ? ` · ${r.medal.toUpperCase()} medal` : ""}`;
+    const copy = () => { navigator.clipboard?.writeText(share).then(() => setCopied(true)); };
+    return (
+      <>
+        <h2>{t("complete")}</h2>
+        <div className="badges">
+          {r.medal !== "none" && <div className={`medal ${r.medal}`}>{r.medal.toUpperCase()} {t("medal")}</div>}
+          {r.isHighScore && <div className="badge">{t("newHigh")}</div>}
+          {r.unlocked && <div className="badge unlock">{t("unlocked")}: {r.unlocked}</div>}
+        </div>
+        <div className="card">
+          <Row k={t("score")} v={r.score} />
+          <Row k={t("planesEaten")} v={`${r.eaten}  (${r.eatenByKind.fighter}F · ${r.eatenByKind.bomber}B · ${r.eatenByKind.escort}E${r.eatenByKind.boss ? ` · ${r.eatenByKind.boss} zeppelin` : ""})`} />
+          <Row k={t("bestCombo")} v={r.bestCombo > 0 ? `x${r.bestCombo}` : "—"} />
+          <Row k={t("firstBite")} v={r.firstBite === null ? t("never") : `${r.firstBite.toFixed(1)}s`} />
+          {r.objectives.map((o) => <Row key={o.id} k={`${o.done ? "✓" : "○"} ${o.text}`} v={o.done ? "+500" : `${o.progress}/${o.target}`} />)}
+          <Row k={t("highScore")} v={r.highScore} />
+        </div>
+        <button className="primary" autoFocus onClick={() => { e().ui("confirm"); e().restart(); }}>{t("flyAgain")}</button>
+        <button onClick={() => { e().ui("confirm"); copy(); }}>{copied ? t("copied") : t("copy")}</button>
+        <button onClick={() => { e().ui("back"); e().quitToTitle(); }}>{t("title")}</button>
+      </>
+    );
+  }
+
+  return (
+    <div id="menu" className={phase === "paused" ? "dim" : ""} onMouseOver={(ev) => { if ((ev.target as HTMLElement).tagName === "BUTTON") engine.current?.ui("hover"); }}>
+      <div className="panel">{body}</div>
+    </div>
+  );
+}
+
+function Row({ k, v }: { k: string; v: string | number }) {
+  return <div className="row"><span>{k}</span><span>{v}</span></div>;
+}
+
+function Controls({ onBack }: { onBack: () => void }) {
+  const invertY = useGame((s) => s.options.invertY);
+  return (
+    <>
+      <h2>CONTROLS</h2>
+      <div className="card controls">
+        <Row k="Pitch" v={`${invertY ? "S = climb, W = dive" : "W = climb, S = dive"}  ·  left stick`} />
+        <Row k="Roll / steer" v="A / D  ·  ← / →  ·  left stick" />
+        <Row k="Yaw" v="Q / E  ·  bumpers" />
+        <Row k="Throttle" v="Shift up · Ctrl down  ·  RT" />
+        <Row k="Brake (on ground)" v="Ctrl  ·  LT" />
+        <Row k="Boost (hold)" v="Space  ·  A" />
+        <Row k="Bite lunge (tap)" v="Space  ·  A" />
+        <Row k="Free look" v="right-drag  ·  right stick" />
+        <Row k="Pause" v="Esc  ·  Start" />
+      </div>
+      <p className="muted">Throttle up, roll down the runway, pull up past 150. Eat everything. Keep the FOOD meter up or you lose boost.</p>
+      <button className="primary" autoFocus onClick={onBack}>{t("back")}</button>
+    </>
+  );
+}
+
+function OptionsPage({ onBack, engine }: { onBack: () => void; engine: RefObject<Engine | null> }) {
+  const o = useGame((s) => s.options);
+  const totalEaten = useGame((s) => s.progress.totalEaten);
+  const set = (patch: Partial<Options>) => { store.setOptions(patch); engine.current?.applyOptions(store.get().options); };
+  return (
+    <>
+      <h2>OPTIONS</h2>
+      <LiveryPreview livery={o.livery} />
+      <div className="card options">
+        <div className="section">GAME</div>
+        <label><span>Livery</span>
+          <select value={o.livery} onChange={(ev) => set({ livery: +ev.target.value })}>
+            {LIVERIES.map((l, i) => <option key={l.name} value={i} disabled={totalEaten < l.unlockAt}>{l.name}{totalEaten < l.unlockAt ? ` (eat ${l.unlockAt})` : ""}</option>)}
+          </select></label>
+        <label><span>Quality</span>
+          <select value={o.quality} onChange={(ev) => set({ quality: ev.target.value as Options["quality"] })}>
+            <option value="high">High (shadows + glow)</option><option value="low">Low</option>
+          </select></label>
+        <label><span>Field of view {o.fov}°</span>
+          <input type="range" min={60} max={100} step={1} value={o.fov} onChange={(ev) => set({ fov: +ev.target.value })} /></label>
+        <label><span>Screen shake {Math.round(o.shake * 100)}%</span>
+          <input type="range" min={0} max={1} step={0.1} value={o.shake} onChange={(ev) => set({ shake: +ev.target.value })} /></label>
+        <label><span>Invert Y (pull back to climb)</span>
+          <input type="checkbox" checked={o.invertY} onChange={(ev) => set({ invertY: ev.target.checked })} /></label>
+        <label><span>Sensitivity {o.sensitivity.toFixed(1)}</span>
+          <input type="range" min={0.5} max={2} step={0.1} value={o.sensitivity} onChange={(ev) => set({ sensitivity: +ev.target.value })} /></label>
+        <div className="section">SOUND</div>
+        <label><span>Master volume {Math.round(o.volume * 100)}%</span>
+          <input type="range" min={0} max={1} step={0.05} value={o.volume} onChange={(ev) => set({ volume: +ev.target.value })} /></label>
+        <label><span>Music {Math.round(o.music * 100)}%</span>
+          <input type="range" min={0} max={1} step={0.05} value={o.music} onChange={(ev) => set({ music: +ev.target.value })} /></label>
+        <label><span>Effects {Math.round(o.sfx * 100)}%</span>
+          <input type="range" min={0} max={1} step={0.05} value={o.sfx} onChange={(ev) => set({ sfx: +ev.target.value })} /></label>
+        <label><span>Interface {Math.round(o.ui * 100)}%</span>
+          <input type="range" min={0} max={1} step={0.05} value={o.ui} onChange={(ev) => set({ ui: +ev.target.value })} /></label>
+        <label><span>Captions for sounds</span>
+          <input type="checkbox" checked={o.captions} onChange={(ev) => set({ captions: ev.target.checked })} /></label>
+        <div className="section">ACCESSIBILITY</div>
+        <label><span>Reduced motion</span>
+          <input type="checkbox" checked={o.reducedMotion} onChange={(ev) => set({ reducedMotion: ev.target.checked })} /></label>
+        <label><span>High-contrast HUD</span>
+          <input type="checkbox" checked={o.highContrast} onChange={(ev) => set({ highContrast: ev.target.checked })} /></label>
+        <label><span>Language</span>
+          <select value={o.lang} onChange={(ev) => set({ lang: ev.target.value as Options["lang"] })}>
+            {LANGS.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+          </select></label>
+        <label><span>Replay tutorial</span>
+          <input type="checkbox" checked={!o.tutorialDone} onChange={(ev) => set({ tutorialDone: !ev.target.checked })} /></label>
+        <label><span>Gamepad</span>
+          <input type="checkbox" checked={o.gamepad} onChange={(ev) => set({ gamepad: ev.target.checked })} /></label>
+        <label><span>Touch controls</span>
+          <input type="checkbox" checked={o.touch} onChange={(ev) => set({ touch: ev.target.checked })} /></label>
+        <label><span>Colour-blind marker tags</span>
+          <input type="checkbox" checked={o.colorblind} onChange={(ev) => set({ colorblind: ev.target.checked })} /></label>
+      </div>
+      <button className="primary" autoFocus onClick={onBack}>{t("back")}</button>
+    </>
+  );
+}
