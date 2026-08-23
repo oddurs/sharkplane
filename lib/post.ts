@@ -41,6 +41,8 @@ export class Post {
     this.resize();
   }
 
+  setBloomResolution(scale: number) { this.bloom.resolution.set(innerWidth * scale, innerHeight * scale); }
+
   resize() {
     const pr = this.renderer.getPixelRatio();
     this.composer.setSize(innerWidth, innerHeight);

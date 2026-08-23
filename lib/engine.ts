@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { groundHeight, isWater, isOnRunway, buildWorld, WORLD_RADIUS, type World } from "./terrain";
+import { groundHeight, isWater, isOnRunway, buildWorld, DETAIL, WORLD_RADIUS, type World } from "./terrain";
+import { detectTier, isIOS, isTouch, type Tier } from "./device";
 import { makePlane, makeZeppelin, LIVERIES, type PlaneModel } from "./models";
 import { Sky, TIMES_OF_DAY, type TimeOfDay } from "./sky";
 import { Fx, Ribbon } from "./fx";
@@ -7,7 +8,7 @@ import { Post } from "./post";
 import { Audio, EnemyVoice } from "./audio";
 import { Birds, WorldLife, Rain } from "./life";
 import { t as tr, setLang } from "./i18n";
-import { Input } from "./input";
+import { Input, Tilt, touchState } from "./input";
 import { Rng, hashString, todayKey } from "./rng";
 import { store, type EnemyKind, type Alert, type RadarBlip, type Target, type Objective, type Options } from "./store";
 
@@ -117,7 +118,10 @@ export class Engine {
   private hunger = 1; private frenzy = 0; private handsOff = 0; private autoRotate = 0; private bounceTimer = 0;
   private dustAcc = 0; private streakAcc = 0; private heartAcc = 0;
   private camQ = new THREE.Quaternion(); private titleAngle = 0;
-  private frameEma = 0.016; private slowFor = 0; private autoDropped = false;
+  private frameEma = 0.016; private slowFor = 0; private autoDropped = 0;
+  private tier: Tier = "high";
+  private tiltInput: Tilt | null = null;
+  private toastTimer = 0;
 
   constructor(root: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -129,8 +133,11 @@ export class Engine {
     this.camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.5, 5000);
     addEventListener("resize", this.onResize);
 
+    this.tier = detectTier();
+    const o0 = store.get().options;
+    if (!o0.qualitySet) store.setOptions({ quality: this.tier, qualitySet: true, touch: o0.touch || isTouch() });
     this.sky = new Sky(this.scene);
-    this.world = buildWorld(this.scene);
+    this.world = buildWorld(this.scene, DETAIL[store.get().options.quality]);
     this.fx = new Fx(this.scene);
     this.post = new Post(this.renderer, this.scene, this.camera);
     this.input = new Input(this.renderer.domElement);
@@ -158,7 +165,8 @@ export class Engine {
     cancelAnimationFrame(this.raf);
     removeEventListener("resize", this.onResize);
     document.removeEventListener("visibilitychange", this.onHidden);
-    removeEventListener("pointerdown", this.kickAudio); removeEventListener("keydown", this.kickAudio);
+    removeEventListener("pointerdown", this.kickAudio); removeEventListener("keydown", this.kickAudio); removeEventListener("touchend", this.kickAudio);
+    this.tiltInput?.dispose();
     this.input.dispose();
     this.sound?.dispose();
     this.renderer.dispose();
@@ -183,6 +191,7 @@ export class Engine {
     this.resetWorld();
     this.introT = 0;
     this.camQ.identity();
+    this.tiltInput?.calibrate();
     if (this.sound) { this.sound.music.play("play"); this.sound.music.intensity = 0; }
     store.set({ phase: "intro", menuPage: "main" });
   }
@@ -204,12 +213,14 @@ export class Engine {
   applyOptions(o: Options) {
     this.sound?.setVolumes({ master: o.volume, music: o.music, sfx: o.sfx, ui: o.ui });
     setLang(o.lang);
-    const high = o.quality === "high";
-    this.renderer.shadowMap.enabled = high;
-    this.sky.setShadows(high);
-    this.post.enabled = high;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, high ? 1.5 : 1));
+    const q = o.quality;
+    this.renderer.shadowMap.enabled = q === "high";
+    this.sky.setShadows(q === "high");
+    this.post.enabled = q !== "low";
+    this.post.setBloomResolution(q === "high" ? 1 : 0.5);
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, q === "high" ? 1.5 : q === "medium" ? 1.25 : 1));
     this.onResize();
+    if (o.touch && o.scheme === "tilt") { if (!this.tiltInput) this.tiltInput = new Tilt(); this.tiltInput.enabled = true; } else if (this.tiltInput) this.tiltInput.enabled = false;
     if (Math.min(o.livery, LIVERIES.length - 1) !== this.liveryIndex) {
       this.buildPlayer(o.livery);
       this.player.mesh.position.copy(this.player.pos); this.player.mesh.quaternion.copy(this.player.q);
@@ -219,9 +230,10 @@ export class Engine {
   private onHidden = () => { if (document.hidden && store.get().phase === "playing") this.pause(); };
   private ensureSound() {
     if (this.sound) { this.sound.resume(); return; }
+    void isIOS; void touchState;
     const o = store.get().options;
     this.sound = new Audio({ master: o.volume, music: o.music, sfx: o.sfx, ui: o.ui });
-    addEventListener("pointerdown", this.kickAudio); addEventListener("keydown", this.kickAudio);
+    addEventListener("pointerdown", this.kickAudio); addEventListener("keydown", this.kickAudio); addEventListener("touchend", this.kickAudio); // iOS unlocks on touchend
     this.sound.onCaption = (c) => { if (store.get().options.captions) { store.setHud({ caption: c.text }); this.captionTimer = 1.5; } };
   }
   /** UI feedback from the menus. Hover never creates the context (autoplay policy would leave it suspended). */
@@ -798,6 +810,7 @@ export class Engine {
 
   // ---------- round ----------
   private showMsg(t: string) { this.msg = t; this.msgTimer = 1.2; }
+  toast(t: string) { store.setHud({ toast: t }); this.toastTimer = 3.5; }
 
   private updateRound(dt: number) {
     this.time += dt; this.timeLeft -= dt;
@@ -832,6 +845,7 @@ export class Engine {
     else if (this.tutorialStep === 4 && this.tutorialTimer > 1.5) { this.tutorialStep = 99; this.radio("t_done", 0); store.setOptions({ tutorialDone: true }); }
     if (this.subtitleTimer > 0) { this.subtitleTimer -= dt; if (this.subtitleTimer <= 0) store.setHud({ subtitle: null }); }
     if (this.captionTimer > 0) { this.captionTimer -= dt; if (this.captionTimer <= 0) store.setHud({ caption: "" }); }
+    if (this.toastTimer > 0) { this.toastTimer -= dt; if (this.toastTimer <= 0) store.setHud({ toast: "" }); }
   }
 
   private finish() {
@@ -905,7 +919,7 @@ export class Engine {
       timeLeft: Math.ceil(this.timeLeft), wave: this.wave, waveBanner: this.waveBannerTimer > 0 ? this.waveBanner : "",
       countdown: this.countdownShown, hunger: this.hunger, frenzy: Math.max(0, this.frenzy),
       objectives: this.objectives.map((o) => ({ ...o })), boss: this.boss ? { hp: this.boss.hp, max: this.boss.max } : null,
-      timeOfDay: this.timeOfDay, resumeIn: Math.ceil(this.resumeIn), muted: !this.sound || this.sound.ctx.state !== "running", radar, alerts, targets, lockDist: lock ? Math.round(lock.pos.distanceTo(p.pos)) : null,
+      timeOfDay: this.timeOfDay, resumeIn: Math.ceil(this.resumeIn), muted: !this.sound || this.sound.ctx.state !== "running", rolling: p.state === "rolling", tier: store.get().options.quality, radar, alerts, targets, lockDist: lock ? Math.round(lock.pos.distanceTo(p.pos)) : null,
     });
   }
 
@@ -924,7 +938,7 @@ export class Engine {
     this.last = performance.now();
   }
 
-  private clock = 0;
+  private clock = 0; private frameParity = false;
   private tick(realDt: number, render: boolean) {
     this.clock += realDt;
     const now = this.clock * 1000;
@@ -952,6 +966,7 @@ export class Engine {
       case "title":
       case "roundOver":
         this.input.consumeSkip();
+        if (render && isTouch() && (this.frameParity = !this.frameParity)) return;
         if (this.sound && this.sound.music["mode"] === "off") this.sound.music.play("title");
         this.titleScene(realDt);
         this.fx.update(realDt);
@@ -975,10 +990,11 @@ export class Engine {
         // auto quality: sustained slow frames → drop to Low once, with a toast
         this.frameEma = THREE.MathUtils.lerp(this.frameEma, realDt, 0.05);
         this.slowFor = this.frameEma > 0.045 ? this.slowFor + realDt : 0;
-        if (this.slowFor > 3 && opts.quality === "high" && !this.autoDropped) {
-          this.autoDropped = true;
-          store.setOptions({ quality: "low" }); this.applyOptions(store.get().options);
-          this.showMsg("LOW QUALITY MODE");
+        if (this.slowFor > 4 && opts.quality !== "low" && this.autoDropped < 2) {
+          this.autoDropped++; this.slowFor = 0;
+          const next = opts.quality === "high" ? "medium" : "low";
+          store.setOptions({ quality: next }); this.applyOptions(store.get().options);
+          this.toast(next === "medium" ? "Dropped to MEDIUM quality to keep it smooth" : "Dropped to LOW quality to keep it smooth");
         }
         let dt = realDt;
         if (this.resumeIn > 0) { const prev = Math.ceil(this.resumeIn); this.resumeIn -= realDt; if (Math.ceil(this.resumeIn) !== prev) this.sound?.tick(); dt = 0; }

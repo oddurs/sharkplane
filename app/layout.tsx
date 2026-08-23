@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", title: "SHARKPLANE — eat the skies", description, images: ["/og.png"] },
   other: { "color-scheme": "dark" },
 };
-export const viewport: Viewport = { themeColor: "#1b2a44", width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false };
+export const viewport: Viewport = { themeColor: "#1b2a44", width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false, viewportFit: "cover", interactiveWidget: "overlays-content" };
 
 const jsonLd = {
   "@context": "https://schema.org", "@type": "VideoGame", name: "SHARKPLANE", url: site, description,

@@ -52,12 +52,20 @@ const js = (expr) => send("Runtime.evaluate", { expression: expr, returnByValue:
 const keyEvent = (type, code) => js(`window.dispatchEvent(new KeyboardEvent(${JSON.stringify(type.toLowerCase())}, { code: ${JSON.stringify(code)}, key: ${JSON.stringify(code === "ShiftLeft" ? "Shift" : code === "Space" ? " " : code)}, bubbles: true, cancelable: true })); 0`);
 const key = async (code) => { await keyEvent("keyDown", code); await keyEvent("keyUp", code); };
 await send("Runtime.enable");
-await send("Page.enable"); await send("Page.bringToFront"); await send("Emulation.setFocusEmulationEnabled", { enabled: true });
+await send("Page.enable");
+const MOBILE = !!process.env.MOBILE;
+if (MOBILE) {
+  await send("Emulation.setDeviceMetricsOverride", { width: 844, height: 390, deviceScaleFactor: 2, mobile: true, screenOrientation: { type: "landscapePrimary", angle: 90 } });
+  await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+  await send("Emulation.setUserAgentOverride", { userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Mobile Safari/537.36" });
+}
+const touch = (type, points) => send("Input.dispatchTouchEvent", { type, touchPoints: points.map((p, i) => ({ x: p.x, y: p.y, id: p.id ?? i })) });
+const shot = async (name) => { const r = await send("Page.captureScreenshot", { format: "png" }); if (r.data) (await import("node:fs")).writeFileSync(`${process.env.SHOT_DIR ?? "."}/${name}.png`, Buffer.from(r.data, "base64")); }; await send("Page.bringToFront"); await send("Emulation.setFocusEmulationEnabled", { enabled: true });
 
 const checks = [];
 const check = (name, ok) => { checks.push([name, !!ok]); console.log(`${ok ? "✓" : "✗"} ${name}`); };
 
-await js(`localStorage.setItem('sharkplane.options', JSON.stringify({ quality: 'low', tutorialDone: true }))`);
+await js(`localStorage.setItem('sharkplane.options', JSON.stringify({ quality: 'low', qualitySet: true, tutorialDone: true, touch: ${MOBILE}, scheme: 'anywhere', autoThrottle: true }))`);
 await js(`location.reload()`); await sleep(5000);
 check("title renders", await js(`!!document.querySelector('.panel h1')`));
 check("engine exposed with ?debug", await js(`typeof window.__game === 'object'`));
@@ -66,6 +74,40 @@ await key("KeyX"); await sleep(200);
 const adv = async (s) => { await js(`window.__game.engine.advance(${s})`); await sleep(150); };
 await adv(4);
 check("countdown → playing", await js(`!!document.getElementById('stats')`));
+if (MOBILE) {
+  check("touch controls rendered", await js(`!!document.getElementById('steer-zone') && !!document.getElementById('bite-btn') && !!document.getElementById('brake-btn')`));
+  check("safe-area/landscape HUD: radar centred", await js(`(()=>{const r=document.getElementById('radar').getBoundingClientRect();return Math.abs((r.left+r.width/2)-422)<40})()`));
+  await shot("mobile_runway");
+  // auto-throttle rolls us; pull back on the left half (drag down = climb with inverted pitch) once fast enough
+  await adv(5);
+  const ms = await js(`window.__game.player.speed`);
+  check(`auto-throttle rolls (speed ${ms?.toFixed?.(1)})`, ms > 25);
+  await touch("touchStart", [{ x: 200, y: 250 }]); await touch("touchMove", [{ x: 200, y: 330 }]); await adv(0.6);
+  await touch("touchEnd", []); await adv(2);
+  check("takes off by dragging", (await js(`window.__game.player.state`)) === "airborne");
+  // bite button: tap = lunge
+  const b = await js(`(()=>{const r=document.getElementById('bite-btn').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2]})()`);
+  const boost0 = await js(`window.__game.engine.boostMeter`);
+  await touch("touchStart", [{ x: b[0], y: b[1] }]); await sleep(60); await touch("touchEnd", []); await adv(0.3);
+  check("BITE tap lunges", (await js(`window.__game.engine.lunge`)) > 0.3 || (await js(`window.__game.engine.boostMeter`)) < boost0);
+  await js(`(()=>{const g=window.__game,p=g.player,e=g.enemies[0];e.biteCooldown=0;e.pos.copy(p.mesh.localToWorld(new p.pos.constructor(0,0,-6)));})()`); await adv(0.5);
+  check("eats a plane (mobile)", (await js(`window.__game.score`)) >= 100);
+  await shot("mobile_flight");
+  // pause via the on-screen button
+  const pz = await js(`(()=>{const r=document.getElementById('pause-btn').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2]})()`);
+  await touch("touchStart", [{ x: pz[0], y: pz[1] }]); await touch("touchEnd", []); await adv(0.1);
+  check("pause button pauses", (await js(`document.querySelector('.panel h2')?.textContent`)) === "PAUSED");
+  await shot("mobile_pause");
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true, screenOrientation: { type: "portraitPrimary", angle: 0 } }); await sleep(300);
+  check("portrait shows the rotate card", await js(`getComputedStyle(document.getElementById('rotate')).display === 'grid'`));
+  await shot("mobile_portrait");
+  check("no console errors", errors.length === 0);
+  if (errors.length) console.log(errors.join("\n"));
+  ws.close(); chrome.kill(); srv?.close();
+  const failedM = checks.filter(([, ok]) => !ok).length;
+  console.log(`\n${checks.length - failedM}/${checks.length} mobile checks passed`);
+  process.exit(failedM ? 1 : 0);
+}
 await keyEvent("keyDown", "ShiftLeft"); await adv(5);
 const speed = await js(`window.__game.player.speed`);
 check(`rolls down the runway (speed ${speed?.toFixed?.(1)})`, speed > 25);

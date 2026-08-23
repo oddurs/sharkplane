@@ -44,8 +44,15 @@ export function isOnRunway(x: number, z: number) {
 
 export type World = { water: THREE.Mesh; update: (t: number) => void };
 
-export function buildWorld(scene: THREE.Scene): World {
-  const size = 3200, seg = 150;
+export type Detail = { terrainSeg: number; trees: number; clouds: number; waterSeg: number };
+export const DETAIL: Record<"high" | "medium" | "low", Detail> = {
+  high: { terrainSeg: 150, trees: 700, clouds: 40, waterSeg: 56 },
+  medium: { terrainSeg: 110, trees: 380, clouds: 26, waterSeg: 36 },
+  low: { terrainSeg: 80, trees: 200, clouds: 16, waterSeg: 24 },
+};
+
+export function buildWorld(scene: THREE.Scene, detail: Detail = DETAIL.high): World {
+  const size = 3200, seg = detail.terrainSeg;
   let g: THREE.BufferGeometry = new THREE.PlaneGeometry(size, size, seg, seg);
   g.rotateX(-Math.PI / 2);
   g = g.toNonIndexed();
@@ -78,10 +85,10 @@ export function buildWorld(scene: THREE.Scene): World {
   terrain.receiveShadow = true;
   scene.add(terrain);
 
-  const water = buildWater(scene);
+  const water = buildWater(scene, detail.waterSeg);
   buildAirfield(scene);
-  buildTrees(scene);
-  buildClouds(scene);
+  buildTrees(scene, detail.trees);
+  buildClouds(scene, detail.clouds);
 
   const wpos = water.geometry.attributes.position as THREE.BufferAttribute;
   const base = wpos.array.slice() as Float32Array;
@@ -98,8 +105,8 @@ export function buildWorld(scene: THREE.Scene): World {
   };
 }
 
-function buildWater(scene: THREE.Scene) {
-  const g = new THREE.PlaneGeometry(3400, 3400, 56, 56);
+function buildWater(scene: THREE.Scene, seg: number) {
+  const g = new THREE.PlaneGeometry(3400, 3400, seg, seg);
   g.rotateX(-Math.PI / 2);
   const m = new THREE.MeshPhongMaterial({ color: 0x2f86d8, specular: 0xffffff, shininess: 90, flatShading: true, transparent: true, opacity: 0.92 });
   const water = new THREE.Mesh(g, m);
@@ -169,7 +176,7 @@ function buildAirfield(scene: THREE.Scene) {
   scene.add(sock);
 }
 
-function buildTrees(scene: THREE.Scene) {
+function buildTrees(scene: THREE.Scene, max: number) {
   const trunk = new THREE.CylinderGeometry(0.4, 0.6, 3, 5);
   const leaf = new THREE.ConeGeometry(2.6, 7, 6);
   const spots: THREE.Matrix4[] = [];
@@ -177,7 +184,7 @@ function buildTrees(scene: THREE.Scene) {
   // deterministic scatter so the map is the same every day
   let seed = 12345;
   const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-  for (let i = 0; i < 1400 && spots.length < 700; i++) {
+  for (let i = 0; i < max * 2 && spots.length < max; i++) {
     const x = (rnd() - 0.5) * 2700, z = (rnd() - 0.5) * 2700;
     const h = terrainHeight(x, z);
     if (h < 3 || h > 60 || runwayPadDistance(x, z) < 70) continue;
@@ -191,15 +198,15 @@ function buildTrees(scene: THREE.Scene) {
   scene.add(trunks, leaves);
 }
 
-function buildClouds(scene: THREE.Scene) {
+function buildClouds(scene: THREE.Scene, clouds: number) {
   const puff = new THREE.IcosahedronGeometry(1, 0);
-  const count = 40 * 5;
+  const count = clouds * 5;
   const inst = new THREE.InstancedMesh(puff, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true, transparent: true, opacity: 0.95 }), count);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
   let seed = 777;
   const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
   let i = 0;
-  for (let c = 0; c < 40; c++) {
+  for (let c = 0; c < clouds; c++) {
     const cx = (rnd() - 0.5) * 2800, cy = 140 + rnd() * 140, cz = (rnd() - 0.5) * 2800;
     for (let j = 0; j < 5; j++) {
       const sc = 7 + rnd() * 9;

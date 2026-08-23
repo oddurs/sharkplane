@@ -57,7 +57,7 @@ export default function Hud() {
       </div>
       <div id="stats">
         SPD {hud.speed}<br />ALT {hud.alt}
-        {hud.groundState === "rolling" && <><br />{hud.speed < 150 ? t("throttleUp") : `${t("pullUp")} (${o.invertY ? "S" : "W"})`}</>}
+        {hud.groundState === "rolling" && <><br />{hud.speed < 150 ? (o.touch ? "THROTTLE UP" : t("throttleUp")) : o.touch ? `${t("pullUp")} — DRAG ${o.invertY ? "DOWN" : "UP"}` : `${t("pullUp")} (${o.invertY ? "S" : "W"})`}</>}
         {hud.boosting && <><br />{t("boost")}</>}
         {hud.hunger < 0.25 && <><br /><span className="hungry">{hud.hunger <= 0 ? t("starving") : t("hungry")}</span></>}
       </div>
@@ -85,9 +85,9 @@ export default function Hud() {
         <div key={i} className="alert" style={{ left: `${a.x}%`, top: `${a.y}%` }}>{a.text}</div>
       ))}
       <div id="meters">
-        <div className="meter"><div className="meter-fill throttle" style={{ height: `${hud.throttle * 100}%` }} /><span>THR</span></div>
-        <div className="meter"><div className="meter-fill boost" style={{ height: `${hud.boost * 100}%` }} /><span>BST</span></div>
-        <div className="meter"><div className={`meter-fill hunger ${hud.hunger < 0.25 ? "low" : ""}`} style={{ height: `${hud.hunger * 100}%` }} /><span>FOOD</span></div>
+        <div className="meter"><div className="meter-fill throttle" style={{ height: `${hud.throttle * 100}%`, ["--w" as string]: `${hud.throttle * 100}%` }} /><span>THR</span></div>
+        <div className="meter"><div className="meter-fill boost" style={{ height: `${hud.boost * 100}%`, ["--w" as string]: `${hud.boost * 100}%` }} /><span>BST</span></div>
+        <div className="meter"><div className={`meter-fill hunger ${hud.hunger < 0.25 ? "low" : ""}`} style={{ height: `${hud.hunger * 100}%`, ["--w" as string]: `${hud.hunger * 100}%` }} /><span>FOOD</span></div>
       </div>
       <svg id="radar" viewBox="-1 -1 2 2">
         <circle r="1" className="radar-ring" />

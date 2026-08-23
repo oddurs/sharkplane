@@ -7,18 +7,22 @@ export type Options = {
   sensitivity: number; // 0.5 .. 2
   volume: number; // 0 .. 1
   gamepad: boolean;
-  quality: "high" | "low"; // shadows + post-processing
+  quality: "high" | "medium" | "low"; // high: shadows+post · medium: post only, lighter world · low: plain
   fov: number; // 60 .. 100
   shake: number; // 0 .. 1
   colorblind: boolean; // letter tags on markers instead of colour alone
   livery: number; // index into LIVERIES
   touch: boolean; // on-screen controls
+  scheme: "anywhere" | "stick" | "tilt"; // touch steering scheme
+  autoThrottle: boolean; // hold 100% in the air automatically (one-thumb play)
+  tiltInvert: boolean;
   music: number; sfx: number; ui: number; // 0..1 sub-mixes
   captions: boolean; // caption every sound event
   reducedMotion: boolean; // no shake/tilt/zoom punches
   highContrast: boolean;
   lang: "en" | "is";
   tutorialDone: boolean;
+  qualitySet: boolean; // quality chosen (by the user or the device tier) at least once
 };
 
 export type Objective = { id: string; text: string; target: number; progress: number; done: boolean };
@@ -67,6 +71,9 @@ export type Hud = {
   weather: "clear" | "rain";
   resumeIn: number; // >0 while the unpause countdown runs
   muted: boolean; // audio context not running (needs a gesture)
+  rolling: boolean; // on the ground (touch HUD shows BRAKE)
+  tier: "high" | "medium" | "low";
+  toast: string;
   radar: RadarBlip[];
   alerts: Alert[];
   targets: Target[];
@@ -104,7 +111,8 @@ const defaultOptions: Options = {
   invertY: true, sensitivity: 1, volume: 0.7, gamepad: true,
   quality: "high", fov: 70, shake: 1, colorblind: false, livery: 0,
   touch: typeof navigator !== "undefined" && /Android|iPhone|iPad/i.test(navigator.userAgent),
-  music: 0.8, sfx: 1, ui: 0.8, captions: false, reducedMotion: false, highContrast: false, lang: "en", tutorialDone: false,
+  scheme: "anywhere", autoThrottle: true, tiltInvert: false,
+  music: 0.8, sfx: 1, ui: 0.8, captions: false, reducedMotion: false, highContrast: false, lang: "en", tutorialDone: false, qualitySet: false,
 };
 const defaultProgress: Progress = { totalEaten: 0, medals: 0, sorties: 0, bestScore: 0 };
 const emptyRound: RoundStats = {
@@ -139,7 +147,7 @@ function save(key: string, value: unknown) {
 export const emptyHud: Hud = {
   score: 0, combo: 0, eaten: 0, speed: 0, alt: 0, throttle: 0, boost: 1, boosting: false,
   groundState: "rolling", compassAngle: 0, compassNear: false, msg: "", msgVisible: false,
-  timeLeft: 180, wave: 1, waveBanner: "", countdown: "", hunger: 1, frenzy: 0, objectives: [], boss: null, timeOfDay: "noon", intro: null, subtitle: null, caption: "", weather: "clear", resumeIn: 0, muted: true,
+  timeLeft: 180, wave: 1, waveBanner: "", countdown: "", hunger: 1, frenzy: 0, objectives: [], boss: null, timeOfDay: "noon", intro: null, subtitle: null, caption: "", weather: "clear", resumeIn: 0, muted: true, rolling: true, tier: "high", toast: "",
   radar: [], alerts: [], targets: [], lockDist: null,
 };
 

@@ -140,9 +140,6 @@ button { font: inherit; }
 #throttle-slider { position: absolute; right: 110px; bottom: 120px; width: 44px; height: 170px; background: rgba(27,42,68,.6); clip-path: var(--cut-btn); display: flex; align-items: flex-end; justify-content: center; font-size: 11px; color: #fff; }
 #bite-btn { position: absolute; right: 24px; bottom: 120px; width: 80px; height: 80px; border: 0; background: var(--red); color: #fff; font-size: 16px; clip-path: var(--cut-hex); }
 #pause-btn { position: absolute; right: 24px; top: 70px; width: 44px; height: 44px; border: 0; background: var(--ink); color: #fff; clip-path: var(--cut-tag); }
-#hud:has(#touch) #radar { right: 200px; bottom: 110px; width: 140px; height: 140px; }
-#hud:has(#touch) #meters { right: 200px; bottom: 300px; }
-#hud:has(#touch) #stats { left: 200px; }
 
 /* ---------- intro ---------- */
 .letterbox { position: absolute; left: 0; right: 0; height: 11vh; background: var(--ink); animation: bars .6s ease-out; }
@@ -177,3 +174,70 @@ button { font: inherit; }
 #loading pre { text-align: left; background: rgba(0,0,0,.4); padding: 12px; max-width: 70vw; overflow: auto; font-size: 12px; }
 #loading button { margin: 8px 4px 0; padding: 8px 18px; border: 0; background: var(--yellow); color: var(--ink); clip-path: var(--cut-btn); cursor: pointer; }
 #version { position: fixed; right: 10px; bottom: 4px; font-family: monospace; font-size: 11px; color: rgba(255,255,255,.45); pointer-events: none; }
+
+/* ---------- mobile: safe areas, annoyances, dvh ---------- */
+html, body { height: 100dvh; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+canvas { touch-action: none; }
+#hud { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); box-sizing: border-box; }
+#menu { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+
+/* touch controls (replaces the old fixed stick) */
+#touch { position: absolute; inset: 0; pointer-events: none; }
+#touch > * { pointer-events: auto; touch-action: none; }
+#steer-zone { position: absolute; left: 0; top: 18%; bottom: 0; width: 50%; }
+#stick-ring { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; background: rgba(27,42,68,.55); clip-path: var(--cut-hex); opacity: 0; transition: opacity .12s; }
+#stick-ring.active { opacity: 1; }
+#stick-ring.fixed { left: 110px !important; top: auto !important; bottom: 50px; margin-top: 0; }
+#stick-ring .knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; background: var(--yellow); clip-path: var(--cut-hex); }
+#steer-zone .hint { position: absolute; left: 16px; bottom: 16px; font-size: 12px; letter-spacing: 2px; opacity: .6; }
+#throttle-slider { position: absolute; right: calc(112px + env(safe-area-inset-right)); bottom: calc(28px + env(safe-area-inset-bottom)); width: 56px; height: 180px; background: rgba(27,42,68,.6); clip-path: var(--cut-btn); }
+#throttle-slider .fill { position: absolute; left: 6px; right: 6px; bottom: 6px; background: var(--orange); background-image: repeating-linear-gradient(180deg, transparent 0 10px, rgba(0,0,0,.18) 10px 12px); }
+#throttle-slider .d { position: absolute; right: 8px; font-size: 10px; color: rgba(255,255,255,.7); }
+#throttle-slider .d100 { top: 8px; } #throttle-slider .d50 { top: 50%; } #throttle-slider .d0 { bottom: 8px; }
+#throttle-slider .label { position: absolute; left: 8px; bottom: 8px; font-size: 11px; }
+#bite-btn { position: absolute; right: calc(20px + env(safe-area-inset-right)); bottom: calc(28px + env(safe-area-inset-bottom)); width: 84px; height: 84px; border: 0; background: var(--red); color: #fff; font-size: 17px; clip-path: var(--cut-hex); font-family: var(--font); }
+#bite-btn:active { background: var(--orange); transform: scale(.94); }
+#brake-btn { position: absolute; right: calc(20px + env(safe-area-inset-right)); bottom: calc(124px + env(safe-area-inset-bottom)); width: 84px; height: 48px; border: 0; background: var(--ink); color: #fff; font-size: 13px; clip-path: var(--cut-tag); font-family: var(--font); }
+#pause-btn { position: absolute; right: calc(16px + env(safe-area-inset-right)); top: calc(12px + env(safe-area-inset-top)); width: 56px; height: 48px; border: 0; background: var(--ink); color: #fff; clip-path: var(--cut-tag); font-family: var(--font); }
+
+/* coarse-pointer / small-screen HUD layout */
+@media (pointer: coarse), (max-height: 520px) {
+  #score-block { top: 10px; left: 12px; gap: 8px; }
+  #score { font-size: 30px; padding: 0 14px 4px; }
+  #combo { width: 46px; height: 46px; } #combo svg { width: 46px; height: 46px; } #combo span { font-size: 14px; }
+  #top-center { top: 6px; } #timer { font-size: 26px; padding: 0 14px 2px; } #wave { font-size: 10px; } #compass { font-size: 28px; } #lock-dist { font-size: 12px; }
+  #right-col { top: 10px; right: 84px; gap: 6px; }
+  #eaten { font-size: 13px; padding: 3px 10px; }
+  #objectives { font-size: 11px; } .objective { padding: 3px 8px; } .objective .text { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #stats { bottom: auto; top: 64px; left: 12px; font-size: 13px; padding: 6px 10px; }
+  #meters { right: auto; left: 50%; transform: translateX(-50%) rotate(0); bottom: calc(8px + env(safe-area-inset-bottom)); gap: 6px; flex-direction: row; }
+  .meter { width: 64px; height: 12px; clip-path: var(--cut-tag); padding: 2px; }
+  .meter-fill { position: absolute; left: 2px; top: 2px; bottom: 2px; height: auto !important; right: auto; }
+  .meter-fill { width: var(--w, 0%); }
+  .meter span { top: auto; bottom: 100%; margin: 0 0 2px; font-size: 8px; }
+  #radar { right: auto; left: 50%; transform: translateX(-50%) rotate(0); bottom: calc(30px + env(safe-area-inset-bottom)); width: 110px; height: 110px; padding: 6px; }
+  #msg { font-size: 44px; top: 44%; }
+  #wave-banner { font-size: 30px; padding: 4px 16px 6px; }
+  #countdown { font-size: 96px; }
+  #subtitle { bottom: auto; top: 22%; font-size: 14px; max-width: 60vw; padding: 6px 12px; }
+  #caption { bottom: auto; top: 27%; font-size: 12px; }
+  #muted { top: 110px; left: 12px; font-size: 12px; }
+  .target .box { width: 36px; height: 36px; } .target.bomber .box { width: 50px; height: 42px; }
+  .target .label, .edge .label { font-size: 11px; } .edge .arrow { font-size: 28px; } .edge.locked .arrow { font-size: 36px; }
+  .panel { padding: 16px 20px; gap: 8px; min-width: 0; max-height: 100dvh; }
+  .panel h1 { font-size: clamp(40px, 11vw, 80px); } .panel h2 { font-size: clamp(26px, 6vw, 40px); }
+  .panel button { min-width: 0; width: min(300px, 80vw); padding: 9px 18px; font-size: 17px; }
+  .panel { gap: 6px; }
+  .panel p { font-size: 14px; } .card { font-size: 14px; padding: 10px 14px; }
+  .card.options label { gap: 12px; padding: 4px 0; }
+  #livery-preview { width: min(300px, 80vw); height: 120px; }
+  .letterbox { height: 8vh; } #intro-caption .name { font-size: 36px; } #intro-caption { bottom: 12vh; }
+}
+/* portrait: ask for landscape */
+#rotate { position: fixed; inset: 0; display: none; place-items: center; background: var(--ink); color: #fff; text-align: center; z-index: 50; padding: 24px; }
+#rotate .phone { font-size: 72px; display: inline-block; animation: rot 1.6s ease-in-out infinite; }
+@keyframes rot { 0%, 20% { transform: rotate(0); } 60%, 100% { transform: rotate(90deg); } }
+@media (orientation: portrait) and (pointer: coarse) and (max-width: 900px) { #rotate { display: grid; } }
+#install { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--yellow); color: var(--ink); padding: 10px 18px; clip-path: var(--cut-tag); font-family: Arial, sans-serif; font-size: 14px; display: flex; gap: 12px; align-items: center; z-index: 40; }
+#install button { border: 0; background: var(--ink); color: #fff; padding: 6px 12px; font-family: var(--font); font-size: 13px; clip-path: var(--cut-tag); }
+#toast { position: fixed; left: 50%; top: calc(16px + env(safe-area-inset-top)); transform: translateX(-50%); background: var(--ink); color: var(--yellow); padding: 8px 16px; clip-path: var(--cut-tag); font-size: 14px; z-index: 40; animation: slide-up .3s ease-out; }

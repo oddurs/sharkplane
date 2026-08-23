@@ -5,6 +5,7 @@ import type { Engine } from "@/lib/engine";
 import { LIVERIES } from "@/lib/models";
 import { store, useGame, type Options } from "@/lib/store";
 import { t, LANGS } from "@/lib/i18n";
+import { Tilt } from "@/lib/input";
 import LiveryPreview from "./LiveryPreview";
 
 export default function Menus({ engine }: { engine: RefObject<Engine | null> }) {
@@ -92,6 +93,24 @@ function Row({ k, v }: { k: string; v: string | number }) {
 
 function Controls({ onBack }: { onBack: () => void }) {
   const invertY = useGame((s) => s.options.invertY);
+  const touch = useGame((s) => s.options.touch);
+  const scheme = useGame((s) => s.options.scheme);
+  if (touch) return (
+    <>
+      <h2>{t("controls")}</h2>
+      <div className="card controls">
+        <Row k="Steer" v={scheme === "tilt" ? "tilt the phone (calibrates on SORTIE)" : scheme === "stick" ? "stick, bottom-left" : "drag anywhere on the left half"} />
+        <Row k="Climb / dive" v={invertY ? "drag down = climb, up = dive" : "drag up = climb, down = dive"} />
+        <Row k="Throttle" v="slider (sticks) · double-tap = full" />
+        <Row k="Bite lunge / boost" v="tap BITE / hold BITE" />
+        <Row k="Brake" v="BRAKE (shows while rolling)" />
+        <Row k="Free look" v="second finger on the left half" />
+        <Row k="Pause" v="II top-right" />
+      </div>
+      <p className="muted">Tip: Auto-throttle is on — one thumb steers, the other bites.</p>
+      <button className="primary" autoFocus onClick={onBack}>{t("back")}</button>
+    </>
+  );
   return (
     <>
       <h2>CONTROLS</h2>
@@ -128,7 +147,7 @@ function OptionsPage({ onBack, engine }: { onBack: () => void; engine: RefObject
           </select></label>
         <label><span>Quality</span>
           <select value={o.quality} onChange={(ev) => set({ quality: ev.target.value as Options["quality"] })}>
-            <option value="high">High (shadows + glow)</option><option value="low">Low</option>
+            <option value="high">High (shadows + glow)</option><option value="medium">Medium (glow, lighter world)</option><option value="low">Low</option>
           </select></label>
         <label><span>Field of view {o.fov}°</span>
           <input type="range" min={60} max={100} step={1} value={o.fov} onChange={(ev) => set({ fov: +ev.target.value })} /></label>
@@ -164,6 +183,18 @@ function OptionsPage({ onBack, engine }: { onBack: () => void; engine: RefObject
           <input type="checkbox" checked={o.gamepad} onChange={(ev) => set({ gamepad: ev.target.checked })} /></label>
         <label><span>Touch controls</span>
           <input type="checkbox" checked={o.touch} onChange={(ev) => set({ touch: ev.target.checked })} /></label>
+        {o.touch && (
+          <>
+            <label><span>Touch steering</span>
+              <select value={o.scheme} onChange={async (ev) => { const scheme = ev.target.value as Options["scheme"]; if (scheme === "tilt" && !(await Tilt.requestPermission())) return; set({ scheme }); }}>
+                <option value="anywhere">Touch anywhere (left half)</option><option value="stick">Fixed stick</option><option value="tilt">Tilt the phone</option>
+              </select></label>
+            <label><span>Auto-throttle (one-thumb play)</span>
+              <input type="checkbox" checked={o.autoThrottle} onChange={(ev) => set({ autoThrottle: ev.target.checked })} /></label>
+            {o.scheme === "tilt" && <label><span>Invert tilt pitch</span>
+              <input type="checkbox" checked={o.tiltInvert} onChange={(ev) => set({ tiltInvert: ev.target.checked })} /></label>}
+          </>
+        )}
         <label><span>Colour-blind marker tags</span>
           <input type="checkbox" checked={o.colorblind} onChange={(ev) => set({ colorblind: ev.target.checked })} /></label>
       </div>

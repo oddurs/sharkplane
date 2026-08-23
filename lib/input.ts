@@ -1,7 +1,41 @@
 import type { Options } from "./store";
 
 /** Written by the on-screen touch controls, read by Input.update. */
-export const touchState = { x: 0, y: 0, throttle: null as number | null, boost: false, bite: false, pause: false };
+export const touchState = {
+  x: 0, y: 0, // steering vector from the on-screen stick / touch-anywhere zone
+  throttle: null as number | null, // sticky slider 0..1 (null = not driving)
+  boost: false, bite: false, brake: false, pause: false,
+  lookX: 0, lookY: 0, // two-finger drag
+  tilt: { x: 0, y: 0, active: false }, // device orientation, calibrated
+};
+
+/** Device-orientation steering with a calibration pose captured on start. */
+export class Tilt {
+  private base: { beta: number; gamma: number } | null = null;
+  private raw = { beta: 0, gamma: 0 };
+  enabled = false;
+  constructor() { if (typeof window !== "undefined") addEventListener("deviceorientation", this.onOrient); }
+  dispose() { removeEventListener("deviceorientation", this.onOrient); }
+  /** iOS needs an explicit permission from a user gesture. */
+  static async requestPermission(): Promise<boolean> {
+    const D = (globalThis as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent;
+    if (D?.requestPermission) { try { return (await D.requestPermission()) === "granted"; } catch { return false; } }
+    return true;
+  }
+  calibrate() { this.base = { ...this.raw }; }
+  private onOrient = (e: DeviceOrientationEvent) => {
+    // landscape: the phone's gamma (left/right tilt) becomes pitch, beta becomes roll — swap for landscape-left vs right
+    const landscapeRight = (screen.orientation?.angle ?? 0) === 90;
+    const beta = e.beta ?? 0, gamma = e.gamma ?? 0;
+    this.raw = { beta: landscapeRight ? -beta : beta, gamma: landscapeRight ? -gamma : gamma };
+    if (!this.enabled) return;
+    if (!this.base) this.calibrate();
+    const b = this.base!;
+    touchState.tilt.x = clamp((this.raw.beta - b.beta) / 25, -1, 1); // roll: tilt the phone left/right
+    touchState.tilt.y = clamp((this.raw.gamma - b.gamma) / 20, -1, 1); // pitch: tip the phone forward/back
+    touchState.tilt.active = true;
+  };
+}
 
 /** Smoothed, expo-curved flight inputs from keyboard + gamepad. */
 export class Input {
@@ -113,11 +147,15 @@ export class Input {
     }
 
     if (opts.touch) {
-      if (touchState.x || touchState.y) { rollRaw = -touchState.x; pitchRaw = -touchState.y; }
+      if (opts.scheme === "tilt" && touchState.tilt.active) {
+        rollRaw = -touchState.tilt.x; pitchRaw = (opts.tiltInvert ? -1 : 1) * -touchState.tilt.y;
+      } else if (touchState.x || touchState.y) { rollRaw = -touchState.x; pitchRaw = -touchState.y; }
       if (touchState.throttle !== null) this.throttleAxis = touchState.throttle;
       if (touchState.boost) this.boostHeld = true;
+      if (touchState.brake) this.brake = true;
       if (touchState.bite) { this.boostTap = true; touchState.bite = false; }
       if (touchState.pause) { this.pauseEdge = true; touchState.pause = false; }
+      lookX = touchState.lookX; lookY = touchState.lookY;
     }
 
     if (opts.invertY) pitchRaw = -pitchRaw;
