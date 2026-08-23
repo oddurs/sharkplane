@@ -67,6 +67,7 @@ check("countdown → playing", await js(`!!document.getElementById('stats')`));
 await keyEvent("keyDown", "ShiftLeft"); await sleep(5000);
 const speed = await js(`window.__game.player.speed`);
 check(`rolls down the runway (speed ${speed?.toFixed?.(1)})`, speed > 25);
+if (!(speed > 25)) console.log("diag:", await js(`(()=>{const e=window.__game.engine;const st=JSON.parse(localStorage.getItem('sharkplane.options')||'{}');return JSON.stringify({phase:e.constructor&&window.__game&&(document.querySelector('.panel h2')?.textContent||'none'),hidden:document.hidden,vis:document.visibilityState,throttle:e.player.throttle,state:e.player.state,time:e.time.toFixed(1),resumeIn:e.resumeIn,hitStop:e.hitStop,keys:Object.keys(e.input.keys||{}).filter(k=>e.input.keys[k]),touch:st.touch,gp:navigator.getGamepads?navigator.getGamepads().filter(Boolean).length:-1,ua:navigator.userAgent.slice(0,60)})})()`));
 await key("KeyS"); await sleep(2500);
 check("takes off", (await js(`window.__game.player.state`)) === "airborne");
 await js(`(()=>{const g=window.__game,p=g.player,e=g.enemies[0];e.biteCooldown=0;e.pos.copy(p.mesh.localToWorld(new p.pos.constructor(0,0,-6)));})()`); await sleep(600);
