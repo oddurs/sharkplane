@@ -28,10 +28,15 @@ async function serveOut() {
 
 const url = process.env.DEV_URL ?? `http://localhost:${PORT}/?debug`;
 const srv = process.env.DEV_URL ? null : await serveOut();
-const chrome = spawn(CHROME, ["--headless=new", "--disable-gpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--window-size=1280,800", `--remote-debugging-port=${DBG}`, "--user-data-dir=/tmp/sharkplane-e2e-profile", "--autoplay-policy=no-user-gesture-required", url], { stdio: "ignore" });
-await sleep(4000);
-const targets = await (await fetch(`http://localhost:${DBG}/json`)).json();
-const page = targets.find((t) => t.type === "page" && t.url.includes(`${PORT}`));
+const chrome = spawn(CHROME, ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--window-size=1280,800", `--remote-debugging-port=${DBG}`, "--user-data-dir=/tmp/sharkplane-e2e-profile", "--autoplay-policy=no-user-gesture-required", url], { stdio: ["ignore", "ignore", "inherit"] });
+let targets = [];
+for (let i = 0; i < 60 && !targets.some((t) => t.type === "page" && t.url.includes(new URL(url).host)); i++) {
+  await sleep(1000);
+  try { targets = await (await fetch(`http://127.0.0.1:${DBG}/json`)).json(); } catch { /* not up yet */ }
+}
+const page = targets.find((t) => t.type === "page" && t.url.includes(new URL(url).host));
+if (!page) { console.error("Chrome never exposed the page"); chrome.kill(); process.exit(1); }
+await sleep(3000);
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((r) => (ws.onopen = r));
 let id = 0; const pending = {}; const errors = [];
