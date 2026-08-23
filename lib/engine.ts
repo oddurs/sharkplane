@@ -139,7 +139,7 @@ export class Engine {
     this.birds = new Birds(this.scene, this.rng);
     this.life = new WorldLife(this.scene, this.rng);
     this.rain = new Rain(this.scene);
-    addEventListener("blur", this.onBlur);
+    document.addEventListener("visibilitychange", this.onHidden);
     this.buildPlayer(store.get().options.livery);
     this.applyOptions(store.get().options);
     this.resetWorld();
@@ -157,7 +157,7 @@ export class Engine {
   dispose() {
     cancelAnimationFrame(this.raf);
     removeEventListener("resize", this.onResize);
-    removeEventListener("blur", this.onBlur);
+    document.removeEventListener("visibilitychange", this.onHidden);
     removeEventListener("pointerdown", this.kickAudio); removeEventListener("keydown", this.kickAudio);
     this.input.dispose();
     this.sound?.dispose();
@@ -216,7 +216,7 @@ export class Engine {
     }
   }
 
-  private onBlur = () => { if (store.get().phase === "playing") this.pause(); };
+  private onHidden = () => { if (document.hidden && store.get().phase === "playing") this.pause(); };
   private ensureSound() {
     if (this.sound) { this.sound.resume(); return; }
     const o = store.get().options;

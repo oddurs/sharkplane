@@ -56,6 +56,7 @@ const keyEvent = (type, code) => {
 };
 const key = async (code) => { await keyEvent("keyDown", code); await keyEvent("keyUp", code); };
 await send("Runtime.enable");
+await send("Page.enable"); await send("Page.bringToFront"); await send("Emulation.setFocusEmulationEnabled", { enabled: true });
 
 const checks = [];
 const check = (name, ok) => { checks.push([name, !!ok]); console.log(`${ok ? "✓" : "✗"} ${name}`); };
