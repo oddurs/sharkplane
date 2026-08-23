@@ -1,4 +1,5 @@
 :root {
+  --safe-t: env(safe-area-inset-top, 0px); --safe-r: env(safe-area-inset-right, 0px); --safe-b: env(safe-area-inset-bottom, 0px); --safe-l: env(safe-area-inset-left, 0px);
   --font: var(--font-display), "Arial Black", Impact, sans-serif;
   --ink: #1b2a44;
   --cream: #fff6dc;
@@ -241,3 +242,19 @@ canvas { touch-action: none; }
 #install { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--yellow); color: var(--ink); padding: 10px 18px; clip-path: var(--cut-tag); font-family: Arial, sans-serif; font-size: 14px; display: flex; gap: 12px; align-items: center; z-index: 40; }
 #install button { border: 0; background: var(--ink); color: #fff; padding: 6px 12px; font-family: var(--font); font-size: 13px; clip-path: var(--cut-tag); }
 #toast { position: fixed; left: 50%; top: calc(16px + env(safe-area-inset-top)); transform: translateX(-50%); background: var(--ink); color: var(--yellow); padding: 8px 16px; clip-path: var(--cut-tag); font-size: 14px; z-index: 40; animation: slide-up .3s ease-out; }
+
+/* ---------- menus: extruded slabs that press in ---------- */
+.panel button { box-shadow: 0 6px 0 var(--inkDark, #0f1a2e), 0 10px 14px rgba(0,0,0,.35); transition: transform .08s, box-shadow .08s, background .12s; }
+.panel button:hover, .panel button:focus-visible { transform: translateY(-2px) rotate(-1.5deg) scale(1.04); box-shadow: 0 8px 0 #0f1a2e, 0 14px 18px rgba(0,0,0,.35); }
+.panel button:active { transform: translateY(4px) scale(.98); box-shadow: 0 1px 0 #0f1a2e, 0 3px 6px rgba(0,0,0,.3); }
+.panel button.primary { box-shadow: 0 6px 0 #b38f1a, 0 10px 14px rgba(0,0,0,.35); }
+.panel button.primary:hover, .panel button.primary:focus-visible { box-shadow: 0 8px 0 #b38f1a, 0 14px 18px rgba(0,0,0,.35); }
+.panel button.primary:active { box-shadow: 0 1px 0 #b38f1a; }
+.card, .panel p, .medal, .badge { box-shadow: 0 5px 0 rgba(27,42,68,.55), 0 9px 12px rgba(0,0,0,.3); }
+.card.options input[type=range] { -webkit-appearance: none; appearance: none; height: 10px; background: var(--ink); clip-path: var(--cut-tag); }
+.card.options input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; background: var(--yellow); clip-path: var(--cut-hex); box-shadow: none; }
+.card.options input[type=checkbox] { -webkit-appearance: none; appearance: none; width: 44px; height: 22px; background: var(--ink); clip-path: var(--cut-tag); position: relative; cursor: pointer; }
+.card.options input[type=checkbox]::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; background: var(--cream); clip-path: var(--cut-hex); transition: transform .12s; }
+.card.options input[type=checkbox]:checked { background: var(--green); } .card.options input[type=checkbox]:checked::after { transform: translateX(22px); background: #fff; }
+.card.options select { clip-path: var(--cut-tag); border: 0; background: var(--ink); color: #fff; padding: 6px 10px; }
+.letterbox { box-shadow: 0 0 0 4px #0f1a2e inset; }

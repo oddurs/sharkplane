@@ -28,7 +28,7 @@ async function serveOut() {
 
 const url = process.env.DEV_URL ?? `http://localhost:${PORT}/?debug`;
 const srv = process.env.DEV_URL ? null : await serveOut();
-const chrome = spawn(CHROME, ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--window-size=1280,800", `--remote-debugging-port=${DBG}`, "--user-data-dir=/tmp/sharkplane-e2e-profile", "--autoplay-policy=no-user-gesture-required", url], { stdio: ["ignore", "ignore", "inherit"] });
+const chrome = spawn(CHROME, ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--window-size=1280,800", `--remote-debugging-port=${DBG}`, "--user-data-dir=/tmp/sharkplane-e2e-profile", "--autoplay-policy=no-user-gesture-required", "--mute-audio", url], { stdio: ["ignore", "ignore", "inherit"] });
 let targets = [];
 for (let i = 0; i < 60 && !targets.some((t) => t.type === "page" && t.url.includes(new URL(url).host)); i++) {
   await sleep(1000);
@@ -73,10 +73,10 @@ await js(`document.querySelector('.panel button.primary').click()`); await sleep
 await key("KeyX"); await sleep(200);
 const adv = async (s) => { await js(`window.__game.engine.advance(${s})`); await sleep(150); };
 await adv(4);
-check("countdown → playing", await js(`!!document.getElementById('stats')`));
+check("countdown → playing", (await js(`window.__game.phase`)) === "playing");
 if (MOBILE) {
   check("touch controls rendered", await js(`!!document.getElementById('steer-zone') && !!document.getElementById('bite-btn') && !!document.getElementById('brake-btn')`));
-  check("safe-area/landscape HUD: radar centred", await js(`(()=>{const r=document.getElementById('radar').getBoundingClientRect();return Math.abs((r.left+r.width/2)-422)<40})()`));
+  check("3-D HUD has radar contacts", (await js(`window.__game.hud.radar.length`)) > 0);
   await shot("mobile_runway");
   // auto-throttle rolls us; pull back on the left half (drag down = climb with inverted pitch) once fast enough
   await adv(5);
@@ -122,6 +122,7 @@ await key("Escape"); await adv(0.1);
 check("resumes", !(await js(`document.querySelector('.panel')`)));
 await js(`(()=>{window.__game.engine.timeLeft = 0.5;})()`); await adv(4.5); // resume has a 3 s countdown
 check("round ends with a score card", await js(`!!document.querySelector('.card')`));
+check("3-D HUD scene rendered", (await js(`window.__game.engine.hud3d.scene.children.length`)) > 10);
 check("no console errors", errors.length === 0);
 if (errors.length) console.log(errors.join("\n"));
 

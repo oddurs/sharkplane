@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { groundHeight, isWater, isOnRunway, buildWorld, DETAIL, WORLD_RADIUS, type World } from "./terrain";
 import { detectTier, isIOS, isTouch, type Tier } from "./device";
+import { Hud3D } from "./ui/hud3d";
 import { makePlane, makeZeppelin, LIVERIES, type PlaneModel } from "./models";
 import { Sky, TIMES_OF_DAY, type TimeOfDay } from "./sky";
 import { Fx, Ribbon } from "./fx";
@@ -69,6 +70,7 @@ export class Engine {
   private sky: Sky;
   private world: World;
   private post: Post;
+  private hud3d: Hud3D;
   private fx: Fx;
   private input: Input;
   private sound: Audio | null = null;
@@ -140,6 +142,8 @@ export class Engine {
     this.world = buildWorld(this.scene, DETAIL[store.get().options.quality]);
     this.fx = new Fx(this.scene);
     this.post = new Post(this.renderer, this.scene, this.camera);
+    this.hud3d = new Hud3D();
+    this.renderer.autoClear = false;
     this.input = new Input(this.renderer.domElement);
 
     this.rng = new Rng(hashString("sharkplane:" + todayKey()));
@@ -158,7 +162,7 @@ export class Engine {
   /** Exposed as window.__game in dev / with ?debug — used by the headless test driver. */
   debugHandle() {
     const self = this; // eslint-disable-line @typescript-eslint/no-this-alias
-    return { engine: this, player: this.player, get enemies() { return self.enemies; }, get score() { return self.score; }, get boss() { return self.boss; }, ground: groundHeight };
+    return { engine: this, player: this.player, get enemies() { return self.enemies; }, get score() { return self.score; }, get boss() { return self.boss; }, ground: groundHeight, get phase() { return store.get().phase; }, get hud() { return store.get().hud; } };
   }
 
   dispose() {
@@ -255,6 +259,9 @@ export class Engine {
   private onResize = () => {
     this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix();
     this.renderer.setSize(innerWidth, innerHeight); this.post.resize();
+    const css = getComputedStyle(document.documentElement);
+    const safe = (k: string) => parseFloat(css.getPropertyValue(`--safe-${k}`)) || 0;
+    this.hud3d.resize(innerWidth, innerHeight, isTouch() || innerHeight < 520, { t: safe("t"), r: safe("r"), b: safe("b"), l: safe("l") });
   };
 
   private resetWorld() {
@@ -873,9 +880,9 @@ export class Engine {
     const f = FWD.clone().applyQuaternion(p.q);
     const fh = f.clone().setY(0).normalize(), rh = new THREE.Vector3(-fh.z, 0, fh.x);
     const radar: RadarBlip[] = [], alerts: Alert[] = [], targets: Target[] = [];
-    type Contact = { pos: THREE.Vector3; kind: EnemyKind | "boss"; alert: boolean; hurt: boolean };
-    const contacts: Contact[] = this.enemies.map((e) => ({ pos: e.pos, kind: e.kind, alert: e.alertTimer > 0, hurt: e.hp < KINDS[e.kind].hp }));
-    if (this.boss) contacts.push({ pos: this.boss.pos, kind: "boss", alert: false, hurt: false });
+    type Contact = { pos: THREE.Vector3; fwd: THREE.Vector3; kind: EnemyKind | "boss"; alert: boolean; hurt: boolean };
+    const contacts: Contact[] = this.enemies.map((e) => ({ pos: e.pos, fwd: FWD.clone().applyQuaternion(e.q), kind: e.kind, alert: e.alertTimer > 0, hurt: e.hp < KINDS[e.kind].hp }));
+    if (this.boss) contacts.push({ pos: this.boss.pos, fwd: FWD.clone().applyQuaternion(this.boss.q), kind: "boss", alert: false, hurt: false });
     let lock: Contact | null = null, lockScore = Infinity, nearest: Contact | null = null, nearestD = Infinity;
     for (const c of contacts) {
       const rel = c.pos.clone().sub(p.pos); const d = rel.length();
@@ -890,7 +897,11 @@ export class Engine {
       const rel = c.pos.clone().sub(p.pos); const d = rel.length();
       const dAlt = Math.round(c.pos.y - p.pos.y);
       const kind: EnemyKind = c.kind === "boss" ? "bomber" : c.kind;
-      if (d < RADAR_RANGE) radar.push({ x: rel.dot(rh) / RADAR_RANGE, y: -rel.dot(fh) / RADAR_RANGE, kind, dAlt });
+      if (d < RADAR_RANGE) {
+        const ef = c.fwd;
+        const heading = Math.atan2(ef.dot(rh), ef.dot(fh)); // relative to our heading, for the silhouette
+        radar.push({ x: rel.dot(rh) / RADAR_RANGE, y: -rel.dot(fh) / RADAR_RANGE, kind, dAlt, heading, locked: c === lock });
+      }
       const ndc = c.pos.clone().project(this.camera);
       const onScreen = ndc.z < 1 && Math.abs(ndc.x) < 0.95 && Math.abs(ndc.y) < 0.92;
       let x = (ndc.x + 1) * 50, y = (1 - ndc.y) * 50, angle = 0;
@@ -905,8 +916,9 @@ export class Engine {
       targets.push({ x, y, onScreen, angle, dist: Math.round(d), dAlt, kind, locked: c === lock });
       if (c.alert && onScreen) alerts.push({ x, y, text: c.hurt ? "OW!" : "!" });
     }
-    let compassAngle = 0;
-    if (lock) { const toN = lock.pos.clone().sub(p.pos).setY(0).normalize(); compassAngle = Math.atan2(fh.x * toN.z - fh.z * toN.x, fh.dot(toN)); }
+    let compassAngle = 0, lockPitch = 0;
+    if (lock) { const rel = lock.pos.clone().sub(p.pos); const toN = rel.clone().setY(0).normalize(); compassAngle = Math.atan2(fh.x * toN.z - fh.z * toN.x, fh.dot(toN)); lockPitch = Math.atan2(rel.y, Math.hypot(rel.x, rel.z)); }
+    const bank = RIGHT.clone().applyQuaternion(p.q).y;
     if (lock && lockScore < 40 && store.get().phase === "playing") { this.heartAcc += 0.016; if (this.heartAcc > 0.55) { this.heartAcc = 0; this.sound?.heart(); } }
     this.sound?.setListener(this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()));
 
@@ -914,7 +926,7 @@ export class Engine {
       score: this.score, combo: this.combo, eaten: this.eaten,
       speed: Math.round(p.speed * 5), alt: Math.round(p.pos.y - groundHeight(p.pos.x, p.pos.z)),
       throttle: p.throttle, boost: this.boostMeter, boosting: this.boosting, groundState: p.state,
-      compassAngle, compassNear: lockScore < 80,
+      compassAngle, compassNear: lockScore < 80, lockPitch, bank,
       msg: this.msg, msgVisible: this.msgTimer > 0,
       timeLeft: Math.ceil(this.timeLeft), wave: this.wave, waveBanner: this.waveBannerTimer > 0 ? this.waveBanner : "",
       countdown: this.countdownShown, hunger: this.hunger, frenzy: Math.max(0, this.frenzy),
@@ -1021,6 +1033,19 @@ export class Engine {
       case "paused":
         return;
     }
-    if (render) this.post.render(this.scene, this.camera);
+    if (render) {
+      this.renderer.clear();
+      this.post.render(this.scene, this.camera);
+      const showHud = phase === "playing" || phase === "countdown";
+      this.hud3d.setVisible(showHud);
+      if (showHud) {
+        const o = store.get().options;
+        const sh = this.shake * o.shake * (o.reducedMotion ? 0 : 1) * 4;
+        this.hud3d.setShake((Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh);
+        this.hud3d.update(store.get().hud, o, realDt);
+        this.renderer.clearDepth();
+        this.renderer.render(this.hud3d.scene, this.hud3d.camera);
+      }
+    }
   }
 }

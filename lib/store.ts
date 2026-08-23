@@ -29,7 +29,7 @@ export type Objective = { id: string; text: string; target: number; progress: nu
 
 export type Progress = { totalEaten: number; medals: number; sorties: number; bestScore: number };
 
-export type RadarBlip = { x: number; y: number; kind: EnemyKind; dAlt: number };
+export type RadarBlip = { x: number; y: number; kind: EnemyKind; dAlt: number; heading: number; locked: boolean };
 export type EnemyKind = "fighter" | "bomber" | "escort";
 export type Alert = { x: number; y: number; text: string };
 export type Target = {
@@ -54,6 +54,8 @@ export type Hud = {
   groundState: "rolling" | "airborne";
   compassAngle: number;
   compassNear: boolean;
+  lockPitch: number; // radians, + = above you
+  bank: number; // -1..1
   msg: string;
   msgVisible: boolean;
   timeLeft: number;
@@ -146,7 +148,7 @@ function save(key: string, value: unknown) {
 
 export const emptyHud: Hud = {
   score: 0, combo: 0, eaten: 0, speed: 0, alt: 0, throttle: 0, boost: 1, boosting: false,
-  groundState: "rolling", compassAngle: 0, compassNear: false, msg: "", msgVisible: false,
+  groundState: "rolling", compassAngle: 0, compassNear: false, lockPitch: 0, bank: 0, msg: "", msgVisible: false,
   timeLeft: 180, wave: 1, waveBanner: "", countdown: "", hunger: 1, frenzy: 0, objectives: [], boss: null, timeOfDay: "noon", intro: null, subtitle: null, caption: "", weather: "clear", resumeIn: 0, muted: true, rolling: true, tier: "high", toast: "",
   radar: [], alerts: [], targets: [], lockDist: null,
 };
