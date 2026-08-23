@@ -801,6 +801,10 @@ export class Engine {
       this.camera.rotateZ((Math.random() - 0.5) * sh * 0.05);
     }
     this.shake *= Math.exp(-6 * dt);
+    // final safety clamp: the lerped/shaken position must never sink under the terrain (looking through a
+    // back-face-culled hill washes the whole frame with fog colour)
+    const camFloor = groundHeight(this.camera.position.x, this.camera.position.z) + 1.5;
+    if (this.camera.position.y < camFloor) this.camera.position.y = camFloor;
     const fovBoost = ((this.boosting || this.lunge > 0.3 ? 15 : 0) - this.zoomPunch * 18) * (o.reducedMotion ? 0.3 : 1);
     this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, o.fov + fovBoost, dt * 4);
     this.camera.updateProjectionMatrix();
@@ -957,12 +961,15 @@ export class Engine {
         const heading = Math.atan2(ef.dot(rh), ef.dot(fh)); // relative to our heading, for the silhouette
         radar.push({ x: rel.dot(rh) / RADAR_RANGE, y: -rel.dot(fh) / RADAR_RANGE, kind, dAlt, heading, locked: c === lock });
       }
+      // camera-space depth FIRST: anything behind the camera must use the edge arrow — its NDC projection
+      // flips and can land inside the view, which made markers streak across the screen on the runway
+      const v = c.pos.clone().sub(this.camera.position).applyQuaternion(camInv);
+      const behind = v.z > -1;
       const ndc = c.pos.clone().project(this.camera);
-      const onScreen = ndc.z < 1 && Math.abs(ndc.x) < 0.95 && Math.abs(ndc.y) < 0.92;
+      const onScreen = !behind && ndc.z < 1 && Math.abs(ndc.x) < 0.95 && Math.abs(ndc.y) < 0.92;
       let x = (ndc.x + 1) * 50, y = (1 - ndc.y) * 50, angle = 0;
       if (!onScreen) {
-        const v = c.pos.clone().sub(this.camera.position).applyQuaternion(camInv);
-        const sx = v.x, sy = v.y * (v.z > 0 ? -1 : 1);
+        const sx = v.x, sy = v.y * (behind ? -1 : 1);
         angle = Math.atan2(-sy, sx);
         const ax = Math.cos(angle), ay = Math.sin(angle);
         const m = 0.86 / Math.max(Math.abs(ax), Math.abs(ay));

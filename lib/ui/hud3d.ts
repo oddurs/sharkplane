@@ -183,7 +183,8 @@ export class Hud3D {
     // cockpit inertia: the whole HUD leans with bank and sags under g
     const motion = o.reducedMotion ? 0 : 1;
     this.lean.target = -hud.bank * 0.018 * motion; this.lag.target = -hud.gForce * 6 * motion;
-    this.root.rotation.z = this.lean.update(dt); this.root.position.y = this.lag.update(dt);
+    this.root.rotation.z = THREE.MathUtils.clamp(this.lean.update(dt), -0.03, 0.03);
+    this.root.position.y = THREE.MathUtils.clamp(this.lag.update(dt), -12, 12);
     this.root.rotation.y = -hud.bank * 0.02 * motion;
     const s = this.ui, bob = (i: number) => Math.sin(this.t * 1.3 + i) * 0.6 * (o.reducedMotion ? 0 : 1);
     const mm = Math.floor(hud.timeLeft / 60), ss = String(hud.timeLeft % 60).padStart(2, "0");
@@ -255,7 +256,9 @@ export class Hud3D {
       const size = (tg.kind === "bomber" ? 34 : 26) * s * ls;
       m.corners.forEach((c, ci) => { c.visible = tg.onScreen; c.material = mat(col); const sx = ci === 0 || ci === 3 ? -1 : 1, sy = ci < 2 ? 1 : -1; c.position.set(sx * size, sy * size, 0); c.scale.setScalar(s * (tg.locked ? 1.2 : 1)); });
       m.dart.visible = !tg.onScreen; m.dart.material = mat(col); m.dart.rotation.z = -tg.angle - Math.PI / 2; m.dart.scale.setScalar(s * (tg.locked ? 1.3 : 1));
-      if (this.distTick || !m.label.text) m.label.set(`${qDist(tg.dist)}m${tg.onScreen && Math.abs(tg.dAlt) > 15 ? (tg.dAlt > 0 ? ` ▲${Math.round(tg.dAlt / 10) * 10}` : ` ▼${Math.round(-tg.dAlt / 10) * 10}`) : ""}`); m.label.position.y = -(size + 16); m.label.scale.multiplyScalar(s);
+      if (this.distTick || !m.label.text) m.label.set(`${qDist(tg.dist)}m${tg.onScreen && Math.abs(tg.dAlt) > 15 ? (tg.dAlt > 0 ? ` ▲${Math.round(tg.dAlt / 10) * 10}` : ` ▼${Math.round(-tg.dAlt / 10) * 10}`) : ""}`);
+      m.label.position.y = -(size + 16);
+      m.label.scale.set(m.label.w * s, m.label.h * s, 1); // absolute, never cumulative — a *= here grows exponentially when s ≠ 1
       m.group.rotation.z = tg.locked ? Math.sin(this.t * 5) * 0.06 : 0;
     });
     for (let i = hud.targets.length; i < this.markers.length; i++) this.markers[i].group.visible = false;

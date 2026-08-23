@@ -27,7 +27,13 @@ export class Ribbon {
     for (let i = 0; i < n; i++) { this.pts.push(new THREE.Vector3()); this.ints.push(0); }
   }
 
-  reset(at: THREE.Vector3) { for (const p of this.pts) p.copy(at); this.ints.fill(0); }
+  reset(at: THREE.Vector3) {
+    for (const p of this.pts) p.copy(at);
+    this.ints.fill(0);
+    // collapse the geometry immediately — otherwise stale triangles from the previous flight keep rendering
+    for (let i = 0; i < this.n * 2; i++) { this.pos.setXYZ(i, at.x, at.y, at.z); this.col.setXYZ(i, 0, 0, 0); }
+    this.pos.needsUpdate = true; this.col.needsUpdate = true;
+  }
 
   /** Push a new head point; intensity 0..1 controls brightness at the head. */
   update(head: THREE.Vector3, up: THREE.Vector3, intensity: number) {
