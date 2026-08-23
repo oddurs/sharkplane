@@ -9,14 +9,7 @@ export default function Hud() {
   const phase = useGame((s) => s.phase);
   const o = useGame((s) => s.options);
   if (phase === "title" || phase === "roundOver") return null;
-  if (phase === "intro") {
-    return (
-      <div id="hud">
-        <div className="letterbox top" /><div className="letterbox bottom" />
-        {hud.intro && <div id="intro-caption" style={{ opacity: hud.intro.t > 0.15 ? 1 : 0 }}><span className="tag">YOUR RIDE</span><span className="name">{hud.intro.caption}</span></div>}
-        <div id="intro-skip">PRESS ANY KEY TO SKIP</div>
-      </div>
-    );
-  }
+  if (phase === "intro") return null; // the jaws letterbox is rendered by the engine (lib/ui/hud3d.ts)
+  void hud;
   return <div id="hud" data-phase={phase}>{o.touch && <TouchControls />}</div>;
 }

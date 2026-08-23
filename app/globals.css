@@ -258,3 +258,24 @@ canvas { touch-action: none; }
 .card.options input[type=checkbox]:checked { background: var(--green); } .card.options input[type=checkbox]:checked::after { transform: translateX(22px); background: #fff; }
 .card.options select { clip-path: var(--cut-tag); border: 0; background: var(--ink); color: #fff; padding: 6px 10px; }
 .letterbox { box-shadow: 0 0 0 4px #0f1a2e inset; }
+
+/* ---------- menus in 3-D: tilted panels, layered depth ---------- */
+#menu { perspective: 1100px; perspective-origin: 50% 40%; }
+.panel { transform-style: preserve-3d; transform: rotateX(7deg) rotateY(-3deg); animation: panel-in .5s cubic-bezier(.2,1.4,.4,1), panel-float 7s 0.5s ease-in-out infinite alternate; }
+@keyframes panel-in { from { transform: rotateX(38deg) rotateY(-10deg) translateZ(-260px); opacity: 0; } to { transform: rotateX(7deg) rotateY(-3deg); opacity: 1; } }
+@keyframes panel-float { from { transform: rotateX(7deg) rotateY(-3deg) translateZ(0); } to { transform: rotateX(5deg) rotateY(-1.5deg) translateZ(18px); } }
+.panel h1 { transform: rotate(-3deg) translateZ(80px); }
+.panel h2 { transform: rotate(-2deg) translateZ(70px); }
+.panel p { transform: translateZ(35px); }
+.panel .card, .panel .badges { transform: rotate(.6deg) translateZ(28px); }
+.panel .medal { transform: translateZ(60px); }
+.panel button { transform: translateZ(48px); }
+.panel button:hover, .panel button:focus-visible { transform: translateZ(64px) translateY(-2px) rotate(-1.5deg) scale(1.05); }
+.panel button:active { transform: translateZ(30px) translateY(3px) scale(.98); }
+.panel button.primary { transform: translateZ(56px) rotate(-1.5deg); }
+.panel button.primary:hover, .panel button.primary:focus-visible { transform: translateZ(76px) rotate(-3deg) scale(1.07); }
+.panel button.primary:active { transform: translateZ(34px) scale(.98); }
+.panel .muted, .panel .tiny { transform: translateZ(20px); }
+#menu.dim { background: radial-gradient(ellipse at center, rgba(15,26,46,.45), rgba(15,26,46,.85)); }
+@media (prefers-reduced-motion: reduce) { .panel { animation: none; transform: none; } .panel > * { transform: none !important; } }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

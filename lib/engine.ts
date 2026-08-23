@@ -1101,18 +1101,24 @@ export class Engine {
         break;
       }
       case "paused":
-        return;
+        break; // world stays frozen but keeps rendering so the pause cinema can swim over it
     }
     if (render) {
       this.renderer.clear();
       this.post.render(this.scene, this.camera);
-      const showHud = phase === "playing" || phase === "countdown";
-      this.hud3d.setVisible(showHud);
-      if (showHud) {
+      const mode = phase === "playing" || phase === "countdown" ? "game" : phase === "intro" ? "intro" : phase === "paused" ? "pause" : "none";
+      this.hud3d.setMode(mode);
+      if (mode === "game") {
         const o = store.get().options;
         const sh = this.shake * o.shake * (o.reducedMotion ? 0 : 1) * 2;
         this.hud3d.setShake((Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh);
         this.hud3d.update(store.get().hud, o, realDt);
+      } else if (mode === "intro") {
+        this.hud3d.updateIntro(realDt, Math.min(1, this.introT / 5.5), LIVERIES[this.liveryIndex].name, tr("yourRide"), tr("skip"));
+      } else if (mode === "pause") {
+        this.hud3d.updatePause(realDt, tr("paused"));
+      }
+      if (mode !== "none") {
         this.renderer.clearDepth();
         this.renderer.render(this.hud3d.scene, this.hud3d.camera);
       }

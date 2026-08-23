@@ -58,6 +58,16 @@ export class Hud3D {
   private caption: Plate; private toast: Plate; private muted: Plate;
   private lastBoss = 0;
   private distClock = 0; private distTick = false;
+  // intro cinema: the letterbox is a shark's mouth
+  private cinema = new THREE.Group();
+  private topJaw = new THREE.Group(); private bottomJaw = new THREE.Group();
+  private jawOpen = new Spring(1.6, 0, 60, 12);
+  private introCaption: Plate; private introTag: Plate; private introSkip: Plate;
+  private introText = "";
+  // pause: a fin circles the frozen world
+  private pauseGroup = new THREE.Group();
+  private fin = new THREE.Group(); private finT = 0;
+  private pausedPlate: Plate;
 
   constructor() {
     resolveFont();
@@ -146,6 +156,35 @@ export class Hud3D {
     this.caption = new Plate(300, 26, "inkDark", { size: 13, color: "#ffd84a", font: "body" }, 5, 0.03); this.root.add(this.caption);
     this.toast = new Plate(420, 34, "ink", { size: 14, color: "#ffd84a", font: "body" }, 7, 0.03); this.root.add(this.toast);
     this.muted = new Plate(250, 30, "orange", { size: 13, color: "#fff", font: "body" }, 6); this.root.add(this.muted);
+
+    // ---- intro cinema: jaws with teeth ----
+    const buildJaw = (up: boolean) => {
+      const g = new THREE.Group();
+      const bar = new THREE.Mesh(slab(4000, 300, 26, 0, 0), mat("ink")); bar.position.y = up ? 150 : -150; g.add(bar);
+      const gum = new THREE.Mesh(slab(4000, 26, 30, 0, 0), mat("red")); gum.position.y = up ? 8 : -8; g.add(gum);
+      for (let x = -1900; x <= 1900; x += 130) {
+        const tooth = new THREE.Mesh(dart(56, 88, 22), mat("cream"));
+        tooth.rotation.z = up ? Math.PI : 0;
+        tooth.position.set(x + (up ? 0 : 65), up ? -30 : 30, 6);
+        g.add(tooth);
+      }
+      return g;
+    };
+    this.topJaw = buildJaw(true); this.bottomJaw = buildJaw(false);
+    this.cinema.add(this.topJaw, this.bottomJaw);
+    this.introTag = new Plate(150, 30, "yellow", { size: 15, color: "#1b2a44" }, 8, 0.08); this.cinema.add(this.introTag);
+    this.introCaption = new Plate(430, 74, "ink", { size: 48, color: "#fff", stroke: "#b3261e" }, 16, 0.06); this.cinema.add(this.introCaption);
+    this.introSkip = new Plate(300, 26, "inkDark", { size: 13, color: "#8a96a8", font: "body" }, 5); this.cinema.add(this.introSkip);
+    this.cinema.visible = false; this.scene.add(this.cinema);
+
+    // ---- pause: circling fin + floating PAUSED ----
+    const finBlade = new THREE.Mesh(dart(150, 210, 30), mat("ink")); finBlade.rotation.z = 0.12; finBlade.position.y = 70; this.fin.add(finBlade);
+    const finNotch = new THREE.Mesh(dart(60, 90, 32), mat("inkDark")); finNotch.rotation.z = Math.PI + 0.12; finNotch.position.set(48, 40, 2); this.fin.add(finNotch);
+    const waterline = new THREE.Mesh(slab(4000, 46, 18, 0, 0), mat("inkDark", { opacity: 0.85 })); waterline.name = "waterline"; this.pauseGroup.add(waterline);
+    for (let i = 0; i < 3; i++) { const wake = new THREE.Mesh(slab(90 - i * 22, 10, 8, 0.1, 1), mat("sky", { opacity: 0.7 - i * 0.18 })); wake.position.set(-110 - i * 90, 6, 4); wake.name = `wake${i}`; this.fin.add(wake); }
+    this.pauseGroup.add(this.fin);
+    this.pausedPlate = new Plate(340, 84, "yellow", { size: 56, color: "#1b2a44" }, 20, 0.07); this.pauseGroup.add(this.pausedPlate);
+    this.pauseGroup.visible = false; this.scene.add(this.pauseGroup);
   }
 
   resize(w: number, h: number, coarse: boolean, safe: { t: number; r: number; b: number; l: number }) {
@@ -289,4 +328,53 @@ export class Hud3D {
 
   /** Hide everything (title / score card / intro). */
   setVisible(v: boolean) { this.scene.visible = v; }
+
+  setMode(mode: "game" | "intro" | "pause" | "none") {
+    this.scene.visible = mode !== "none";
+    this.root.visible = mode === "game";
+    this.cinema.visible = mode === "intro";
+    this.pauseGroup.visible = mode === "pause";
+    if (mode !== "intro") this.jawOpen.set(1.6);
+  }
+
+  /** Intro: jaws close in from off-screen, caption card punches in low-left, skip hint bottom-right. */
+  updateIntro(dt: number, u: number, caption: string, tag: string, skip: string) {
+    this.t += dt;
+    const s = this.ui, H = this.h, W = this.w;
+    this.jawOpen.target = 0;
+    const open = Math.max(0, this.jawOpen.update(dt));
+    const barH = H * 0.115;
+    this.topJaw.position.set(0, H / 2 - barH + open * barH * 2.4 + Math.sin(this.t * 1.1) * 2, 40);
+    this.bottomJaw.position.set(0, -H / 2 + barH - open * barH * 2.4 + Math.sin(this.t * 1.3 + 1) * 2, 40);
+    this.topJaw.scale.setScalar(Math.max(0.6, s)); this.bottomJaw.scale.setScalar(Math.max(0.6, s));
+    const show = u > 0.12;
+    this.introTag.visible = this.introCaption.visible = show;
+    if (show && this.introText !== caption) { this.introText = caption; this.introCaption.pop.set(0); this.introCaption.pop.target = 1; this.introCaption.pop.kick(10); }
+    this.introCaption.setText(caption); this.introTag.setText(tag);
+    this.introCaption.tick(dt);
+    const cx = -W / 2 + 60 + 240 * s;
+    this.introTag.position.set(cx - 130 * s, -H / 2 + barH + 118 * s, 60); this.introTag.scale.setScalar(s); this.introTag.rotation.z = -0.06;
+    this.introCaption.position.set(cx, -H / 2 + barH + 62 * s, 55); this.introCaption.scale.multiplyScalar(s); this.introCaption.rotation.z = -0.03;
+    this.introSkip.setText(skip); this.introSkip.tick(dt);
+    this.introSkip.position.set(W / 2 - 190 * s, -H / 2 + barH * 0.45, 70); this.introSkip.scale.setScalar(s * (0.9 + Math.sin(this.t * 3) * 0.04));
+  }
+
+  /** Pause: the fin cruises across the bottom of the frozen world under a floating PAUSED plate. */
+  updatePause(dt: number, label: string) {
+    this.t += dt; this.finT += dt;
+    const W = this.w, H = this.h, s = this.ui;
+    const period = 11;
+    const x = ((this.finT % period) / period) * (W + 700) - (W + 700) / 2;
+    this.fin.position.set(x, Math.sin(this.finT * 2.2) * 8, 0);
+    this.fin.rotation.z = Math.sin(this.finT * 2.2 + 1) * 0.06;
+    for (let i = 0; i < 3; i++) { const wk = this.fin.getObjectByName(`wake${i}`); if (wk) wk.position.y = 6 + Math.sin(this.finT * 6 + i) * 3; }
+    this.pauseGroup.position.set(0, 0, 0);
+    const baseline = -H / 2 + 96 * s;
+    this.fin.position.y += baseline + 24 * s;
+    const wl = this.pauseGroup.getObjectByName("waterline"); if (wl) { wl.position.y = baseline; wl.scale.setScalar(1); }
+    this.pausedPlate.setText(label); this.pausedPlate.tick(dt);
+    this.pausedPlate.position.set(0, H / 2 - 90 * s + Math.sin(this.t * 1.2) * 6, 30);
+    this.pausedPlate.scale.multiplyScalar(s); this.pausedPlate.rotation.z = -0.04 + Math.sin(this.t * 0.9) * 0.02;
+    this.pausedPlate.rotation.y = Math.sin(this.t * 0.7) * 0.1;
+  }
 }

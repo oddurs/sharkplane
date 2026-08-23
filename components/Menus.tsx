@@ -43,7 +43,7 @@ export default function Menus({ engine }: { engine: RefObject<Engine | null> }) 
   function Pause() {
     return (
       <>
-        <h2>{t("paused")}</h2>
+        <h2 className="sr-only">{t("paused")}</h2>{/* the 3-D PAUSED plate renders behind the menu */}
         <button className="primary" autoFocus onClick={() => { e().ui("confirm"); e().resume(); }}>{t("resume")}</button>
         <button onClick={() => { e().ui("confirm"); e().restart(); }}>{t("restart")}</button>
         <button onClick={() => go("controls")}>{t("controls")}</button>
