@@ -14,6 +14,7 @@ import { Rng, hashString, todayKey } from "./rng";
 import { BIG_MOMENT_QUIET, TIERS, type Tier as JuiceTier } from "./tuning";
 import { Fx as FxKit } from "./fx";
 import { store, type EnemyKind, type Alert, type RadarBlip, type Target, type Objective, type Options } from "./store";
+import { LEVELS, dailyLevel, getLevel, levelById, setLevel, starsFor } from "./levels";
 
 const FWD = new THREE.Vector3(0, 0, -1);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -45,6 +46,8 @@ type Enemy = {
   roll: number; wob: number; color: number; hp: number;
   fleeTimer: number; fleeSide: number; spookTimer: number; alertTimer: number; biteCooldown: number; stamina: number;
   smokeAcc: number; leader: Enemy | null;
+  rival?: boolean;
+  chainId?: number; chainIndex?: number;
 };
 
 type Boss = {
@@ -71,6 +74,8 @@ export class Engine {
   private camera: THREE.PerspectiveCamera;
   private sky: Sky;
   private world: World;
+  private worldGroup!: THREE.Group;
+  private builtLevel = "";
   private post: Post;
   private hud3d: Hud3D;
   private fx: Fx;
@@ -107,6 +112,9 @@ export class Engine {
   private contrail!: Ribbon;
   private enemies: Enemy[] = [];
   private boss: Boss | null = null;
+  private boss2: Boss | null = null;
+  private crates: { mesh: THREE.Group; pos: THREE.Vector3; v: THREE.Vector3 }[] = [];
+  private rivalLives = 0;
 
   // round
   private time = 0; private timeLeft = ROUND_TIME; private wave = 1; private waveTimer = WAVE_TIME;
@@ -148,7 +156,11 @@ export class Engine {
     const o0 = store.get().options;
     if (!o0.qualitySet) store.setOptions({ quality: this.tier, qualitySet: true, touch: o0.touch || isTouch() });
     this.sky = new Sky(this.scene);
-    this.world = buildWorld(this.scene, DETAIL[store.get().options.quality]);
+    setLevel(levelById(store.get().levelId));
+    this.worldGroup = new THREE.Group();
+    this.scene.add(this.worldGroup);
+    this.world = buildWorld(this.worldGroup as unknown as THREE.Scene, DETAIL[store.get().options.quality]);
+    this.builtLevel = getLevel().id;
     this.fx = new Fx(this.scene);
     this.post = new Post(this.renderer, this.scene, this.camera);
     this.hud3d = new Hud3D();
@@ -156,8 +168,8 @@ export class Engine {
     this.input = new Input(this.renderer.domElement);
 
     this.rng = new Rng(hashString("sharkplane:" + todayKey()));
-    this.birds = new Birds(this.scene, this.rng);
-    this.life = new WorldLife(this.scene, this.rng);
+    this.birds = new Birds(this.worldGroup as unknown as THREE.Scene, this.rng);
+    this.life = new WorldLife(this.worldGroup as unknown as THREE.Scene, this.rng);
     this.rain = new Rain(this.scene);
     document.addEventListener("visibilitychange", this.onHidden);
     this.buildPlayer(store.get().options.livery);
@@ -203,6 +215,7 @@ export class Engine {
   // ---------- phase control ----------
   startRound() {
     this.ensureSound();
+    this.rebuildWorld();
     this.resetWorld();
     this.introT = 0;
     this.camQ.identity();
@@ -252,14 +265,36 @@ export class Engine {
   private onHidden = () => { if (document.hidden && store.get().phase === "playing") this.pause(); };
   private menuItems(): { id: string; label: string; primary?: boolean }[] {
     const phase = store.get().phase;
-    if (phase === "title") return [{ id: "sortie", label: tr("sortie"), primary: true }, { id: "controls", label: tr("controls") }, { id: "options", label: tr("options") }];
+    if (phase === "title") {
+      if (store.get().menuPage === "levels") {
+        const stars = store.totalStars();
+        const daily = dailyLevel(todayKey(), LEVELS.filter((l) => l.unlockStars <= stars).length);
+        const items: { id: string; label: string; primary?: boolean; sub?: string; locked?: boolean }[] = LEVELS.map((l) => {
+          const rec = store.get().progress.levels[l.id];
+          const locked = l.unlockStars > stars;
+          return { id: `level:${l.id}`, label: l.name, sub: locked ? `LOCKED · ${l.unlockStars}★ NEEDED` : `${"★".repeat(rec?.stars ?? 0)}${"☆".repeat(3 - (rec?.stars ?? 0))}${rec?.bestScore ? ` · BEST ${rec.bestScore}` : ""}`, locked, primary: !locked && !(rec?.stars) };
+        });
+        items.push({ id: "daily", label: `DAILY · ${daily.name}`, sub: todayKey() });
+        items.push({ id: "back", label: tr("back") });
+        return items;
+      }
+      return [{ id: "sortie", label: tr("sortie"), primary: true }, { id: "controls", label: tr("controls") }, { id: "options", label: tr("options") }];
+    }
     return [{ id: "resume", label: tr("resume"), primary: true }, { id: "restart", label: tr("restart") }, { id: "controls", label: tr("controls") }, { id: "options", label: tr("options") }, { id: "quit", label: tr("quit") }];
   }
-  private menuActive() { const ph = store.get().phase; return (ph === "title" || ph === "paused") && store.get().menuPage === "main"; }
+  private menuActive() { const ph = store.get().phase; const pg = store.get().menuPage; return (ph === "title" && (pg === "main" || pg === "levels")) || (ph === "paused" && pg === "main"); }
   /** Activate a 3-D menu button (also used by the keyboard mirror + e2e). */
   menuAction(id: string) {
     this.hud3d.pressMenu(id);
-    if (id === "sortie") { this.ui("confirm"); this.startRound(); }
+    if (id === "sortie") { this.ui("confirm"); store.set({ menuPage: "levels" }); }
+    else if (id === "back") { this.ui("back"); store.set({ menuPage: "main" }); }
+    else if (id === "daily") { this.ui("confirm"); const stars = store.totalStars(); const lvl = dailyLevel(todayKey(), LEVELS.filter((l) => l.unlockStars <= stars).length); store.set({ levelId: lvl.id, daily: true, menuPage: "main" }); this.wipe(() => this.startRound()); }
+    else if (id.startsWith("level:")) {
+      const lvl = levelById(id.slice(6));
+      if (lvl.unlockStars > store.totalStars()) { this.sound?.back(); return; }
+      this.ui("confirm"); store.set({ levelId: lvl.id, daily: false, menuPage: "main" });
+      this.wipe(() => this.startRound());
+    }
     else if (id === "resume") { this.ui("confirm"); this.resume(); }
     else if (id === "restart") { this.ui("confirm"); this.restart(); }
     else if (id === "quit") { this.ui("back"); this.quitToTitle(); }
@@ -278,6 +313,27 @@ export class Engine {
     const id = this.hud3d.pickMenu(e.clientX, e.clientY);
     if (id) this.menuAction(id);
   };
+
+  /** Tear down and rebuild the whole island for a different level. Runs behind the jaw-wipe. */
+  private rebuildWorld() {
+    const id = store.get().levelId;
+    if (id === this.builtLevel) return;
+    setLevel(levelById(id));
+    this.scene.remove(this.worldGroup);
+    this.worldGroup.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.geometry) m.geometry.dispose();
+      const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+      if (Array.isArray(mat)) mat.forEach((x) => x.dispose()); else mat?.dispose();
+    });
+    this.worldGroup = new THREE.Group();
+    this.scene.add(this.worldGroup);
+    const g = this.worldGroup as unknown as THREE.Scene;
+    this.world = buildWorld(g, DETAIL[store.get().options.quality]);
+    this.birds = new Birds(g, new Rng(hashString("birds:" + id)));
+    this.life = new WorldLife(g, new Rng(hashString("life:" + id)));
+    this.builtLevel = id;
+  }
 
   private ensureSound() {
     if (this.sound) { this.sound.resume(); return; }
@@ -315,12 +371,14 @@ export class Engine {
   private resetWorld() {
     this.dateKey = todayKey();
     this.rng = new Rng(hashString("sharkplane:" + this.dateKey));
-    this.timeOfDay = this.rng.pick(TIMES_OF_DAY);
+    const level = getLevel();
+    this.timeOfDay = this.rng.pick(level.times as unknown as TimeOfDay[]);
     this.nextTod = TIMES_OF_DAY[(TIMES_OF_DAY.indexOf(this.timeOfDay) + 1) % TIMES_OF_DAY.length];
-    this.rainy = this.rng.next() < 0.3;
+    this.rainy = this.rng.next() < level.rainChance;
     this.rainLevel = 0; this.rain.intensity = 0;
     const wa = this.rng.range(0, Math.PI * 2), ws = this.rng.range(2, 7);
     this.wind.set(Math.cos(wa) * ws, 0, Math.sin(wa) * ws);
+    if (getLevel().gimmick === "gusts") this.wind.set(0.707 * 14, 0, 0.707 * 14); // down the fjords, and it means it
     this.sky.apply(this.timeOfDay);
     for (const v of this.voices.values()) v.dispose();
     this.voices.clear();
@@ -337,7 +395,7 @@ export class Engine {
     this.enemies = [];
     this.removeBoss();
     this.fx.clear();
-    this.time = 0; this.timeLeft = ROUND_TIME; this.wave = 1; this.waveTimer = WAVE_TIME;
+    this.time = 0; this.timeLeft = getLevel().roundTime; this.wave = 1; this.waveTimer = WAVE_TIME;
     this.score = 0; this.eaten = 0; this.eatenByKind = { fighter: 0, bomber: 0, escort: 0, boss: 0 };
     this.combo = 0; this.comboTimer = 0; this.bestCombo = 0; this.firstBite = null;
     this.msg = ""; this.msgTimer = 0; this.waveBanner = ""; this.waveBannerTimer = 0;
@@ -376,11 +434,12 @@ export class Engine {
   }
 
   // ---------- enemies ----------
-  private populationTarget() { return 7 + 2 * (this.wave - 1); }
+  private populationTarget() { const w = getLevel().waves; return w.base + w.perWave * (this.wave - 1); }
   private pickKind(): EnemyKind {
+    const w = getLevel().waves;
     const r = Math.random();
-    if (this.wave >= 3 && r < 0.25) return "escort";
-    if (this.wave >= 2 && r < 0.5) return "bomber";
+    if (this.wave >= w.escortFrom && r < 0.25) return "escort";
+    if (this.wave >= w.bomberFrom && r < 0.5) return "bomber";
     return "fighter";
   }
   private pickTarget(e: { pos: THREE.Vector3; target: THREE.Vector3 }) {
@@ -397,7 +456,7 @@ export class Engine {
     model.group.scale.setScalar(k.scale);
     const e: Enemy = {
       kind, model, mesh: model.group, pos: new THREE.Vector3(), q: new THREE.Quaternion(),
-      speed: k.speed * (1 + 0.05 * (this.wave - 1)) * (0.9 + Math.random() * 0.2),
+      speed: k.speed * getLevel().waves.enemySpeed * (1 + 0.05 * (this.wave - 1)) * (0.9 + Math.random() * 0.2),
       target: new THREE.Vector3(), roll: 0, wob: Math.random() * 10, color, hp: k.hp,
       fleeTimer: 0, fleeSide: 1, spookTimer: 0, alertTimer: 0, biteCooldown: 0, stamina: 3, smokeAcc: 0, leader, lastDist: 1e9,
     };
@@ -415,6 +474,18 @@ export class Engine {
     if (this.sound && this.voices.size < 8) this.voices.set(e, new EnemyVoice(this.sound.ctx, this.sound["buses"].sfx, kind));
     if (kind === "escort" && !leader) this.spawnEnemy(nearPlayer, "escort", e);
     return e;
+  }
+
+  private chainSeq = 0;
+  /** A cargo convoy: four planes in a line. Eat the tail-most survivor for a chain bonus. */
+  private spawnConvoy() {
+    const id = ++this.chainSeq;
+    let leader: Enemy | null = null;
+    for (let i = 0; i < 4; i++) {
+      const e = this.spawnEnemy(true, "fighter", leader);
+      e.chainId = id; e.chainIndex = i; e.speed = 22; e.stamina = 0.5;
+      leader = e;
+    }
   }
 
   private updateEnemies(dt: number) {
@@ -451,7 +522,15 @@ export class Engine {
 
       let desired: THREE.Vector3;
       let turnRate = k.turn;
-      if (e.spookTimer > 0) {
+      if (e.rival) {
+        // the rival hunts your prey — and eats it in front of you
+        let prey: Enemy | null = null, pd = 1e9;
+        for (const o of this.enemies) { if (o === e || o.rival) continue; const d2 = o.pos.distanceToSquared(e.pos); if (d2 < pd) { pd = d2; prey = o; } }
+        if (prey && Math.sqrt(pd) < 9) { this.dropEnemy(prey, this.enemies.indexOf(prey)); this.fx.burst(prey.pos, FxKit.tintsOf(prey.model.parts), 10, 0.7); this.sound?.crash(prey.pos); this.showMsg("KILL STOLEN!"); }
+        desired = prey ? prey.pos.clone().sub(e.pos).normalize() : toP.clone().normalize();
+        if (dist < 70 && playerBehind) { const away = e.pos.clone().sub(p.pos).normalize(); desired.lerp(away, 0.7).normalize(); }
+        turnRate = 2.2;
+      } else if (e.spookTimer > 0) {
         desired = toP.clone().normalize(); turnRate = k.turn * 1.5;
       } else if (e.fleeTimer > 0) {
         const away = e.pos.clone().sub(p.pos).normalize();
@@ -507,7 +586,8 @@ export class Engine {
         e.pos.y + eRight.y - groundHeight(e.pos.x + eRight.x, e.pos.z + eRight.z),
         e.pos.y - eRight.y - groundHeight(e.pos.x - eRight.x, e.pos.z - eRight.z),
       );
-      if (lowest < 1.2 * k.scale) { this.crash(e, i, threatened || e.fleeTimer > 0 || e.spookTimer > 0); continue; }
+      const overLava = getLevel().lava && isWater(e.pos.x, e.pos.z);
+      if (lowest < 1.2 * k.scale || (overLava && e.pos.y < 3)) { this.crash(e, i, threatened || e.fleeTimer > 0 || e.spookTimer > 0); continue; }
       const toE = e.pos.clone().sub(p.pos);
       if (e.biteCooldown <= 0 && dist < 30 && pf.dot(toE.normalize()) > 0.75) e.pos.lerp(mouth, damp(4, dt));
       e.mesh.position.copy(e.pos);
@@ -524,13 +604,18 @@ export class Engine {
       const voice = this.voices.get(e);
       if (voice && this.sound) { const radial = after.clone().multiplyScalar(e.speed).sub(pf.clone().multiplyScalar(p.speed)).dot(toP.clone().normalize()); voice.update(this.sound.spatial(e.pos, 350), radial, e.alertTimer > 0); }
       if (e.biteCooldown <= 0 && mouth.distanceTo(e.pos) < 7 + 2 * k.scale) this.bite(e, i);
+      if (e.rival) { e.stamina = 99; e.fleeTimer = -9; }
     }
 
     p.jaw = THREE.MathUtils.lerp(p.jaw, nearestAhead < 40 || (this.boss && this.boss.pos.distanceTo(p.pos) < 60) ? 1 : 0, dt * 6);
     if (this.model.jaw) this.model.jaw.rotation.x = -p.jaw * 0.55;
 
     this.spawnCooldown -= dt;
-    if (this.enemies.length < this.populationTarget() && this.spawnCooldown <= 0) { this.spawnEnemy(true); this.spawnCooldown = 1.5; }
+    if (this.enemies.length < this.populationTarget() && this.spawnCooldown <= 0) {
+      if (getLevel().gimmick === "convoy" && Math.random() < 0.45 && this.enemies.length + 4 <= this.populationTarget() + 3) this.spawnConvoy();
+      else this.spawnEnemy(true);
+      this.spawnCooldown = 1.5;
+    }
   }
 
   private feed(pts: number, food: number, kind: EnemyKind | "boss", at: THREE.Vector3) {
@@ -569,6 +654,21 @@ export class Engine {
   private bite(e: Enemy, index: number) {
     const k = KINDS[e.kind];
     e.hp -= 1;
+    if (e.rival && e.hp <= 0) {
+      this.fx.shred(e.model.parts, e.mesh, 1.4);
+      this.dropEnemy(e, index);
+      this.rivalLives--;
+      if (this.rivalLives > 0) {
+        this.showMsg(`RIVAL DOWN — ${this.rivalLives} MORE`);
+        this.feed(400, 0.6, "bomber", e.pos);
+        setTimeout(() => { if (store.get().phase === "playing") this.spawnRivalBody(); }, 4000);
+      } else {
+        this.feed(1200, 1, "boss", e.pos);
+        this.showMsg("RIVAL DEVOURED!");
+        this.sound?.music.play("play");
+      }
+      return;
+    }
     if (e.hp > 0) {
       this.fx.burst(e.pos, FxKit.tintsOf(e.model.parts), 12, 0.6);
       e.speed *= 0.7; e.alertTimer = 1; e.biteCooldown = 1.0;
@@ -578,8 +678,10 @@ export class Engine {
       return;
     }
     this.fx.shred(e.model.parts, e.mesh, k.scale);
+    const chainBonus = e.chainId !== undefined && !this.enemies.some((o) => o !== e && o.chainId === e.chainId && (o.chainIndex ?? 0) > (e.chainIndex ?? 0));
     this.dropEnemy(e, index);
     this.feed(k.pts, k.food, e.kind, e.pos);
+    if (chainBonus && e.chainId !== undefined) { this.score += 150; this.showMsg("CABOOSE! +150"); this.sound?.fanfare(); }
   }
 
   private crash(e: Enemy, index: number, yourFault: boolean) {
@@ -600,20 +702,54 @@ export class Engine {
   }
 
   // ---------- boss ----------
-  private spawnBoss() {
+  private makeBossAt(offsetAngle: number): Boss {
     const z = makeZeppelin();
-    const a = Math.random() * Math.PI * 2;
+    const a = Math.random() * Math.PI * 2 + offsetAngle;
     const pos = this.player.pos.clone().add(new THREE.Vector3(Math.cos(a) * 350, 60, Math.sin(a) * 350));
     pos.y = groundHeight(pos.x, pos.z) + 90;
-    this.boss = { mesh: z.group, weakPoints: z.weakPoints, parts: z.parts, props: z.props, pos, q: new THREE.Quaternion(), target: new THREE.Vector3(), hp: z.weakPoints.length, max: z.weakPoints.length, dropTimer: 4, hitCooldown: 0 };
-    this.pickTarget(this.boss);
+    const b: Boss = { mesh: z.group, weakPoints: z.weakPoints, parts: z.parts, props: z.props, pos, q: new THREE.Quaternion(), target: new THREE.Vector3(), hp: z.weakPoints.length, max: z.weakPoints.length, dropTimer: 4, hitCooldown: 0 };
+    this.pickTarget(b);
+    if (getLevel().boss === "blimp") {
+      const beam = new THREE.Mesh(new THREE.ConeGeometry(9, 120, 8, 1, true), new THREE.MeshBasicMaterial({ color: 0xfff1b0, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }));
+      beam.position.set(0, -66, -2); z.group.add(beam);
+    }
     this.scene.add(z.group);
-    this.waveBanner = "ZEPPELIN SIGHTED"; this.waveBannerTimer = 3; this.sound?.horn(); this.sound?.music.play("boss"); this.radio("r_boss", 5);
+    return b;
   }
-  private removeBoss() { if (this.boss) { this.scene.remove(this.boss.mesh); this.boss = null; } }
+  private spawnBoss() {
+    const kind = getLevel().boss;
+    if (kind === "rival") { this.spawnRival(); return; }
+    this.boss = this.makeBossAt(0);
+    if (kind === "twin") this.boss2 = this.makeBossAt(Math.PI * 0.5);
+    this.waveBanner = kind === "twin" ? "TWO ZEPPELINS SIGHTED" : kind === "lifter" ? "CARGO LIFTER SIGHTED" : "ZEPPELIN SIGHTED";
+    this.waveBannerTimer = 3; this.sound?.horn(); this.sound?.music.play("boss"); this.radio("r_boss", 5);
+  }
+  private spawnRivalBody() {
+    const e = this.spawnEnemy(true, "fighter");
+    e.rival = true; e.hp = 3; e.speed = 46 + (3 - this.rivalLives) * 4; e.stamina = 99;
+    this.scene.remove(e.mesh);
+    const m = makePlane(0, { livery: LIVERIES[LIVERIES.length - 1] });
+    m.group.scale.setScalar(1.0 + (3 - this.rivalLives) * 0.18);
+    e.model = m; e.mesh = m.group; this.scene.add(e.mesh);
+    this.waveBanner = "IT'S BACK — BIGGER"; this.waveBannerTimer = 2.5; this.sound?.horn();
+  }
+  private spawnRival() {
+    this.rivalLives = 3;
+    this.spawnRivalBody();
+    this.waveBanner = "RIVAL SHARK INBOUND"; this.waveBannerTimer = 3; this.sound?.horn(); this.sound?.music.play("boss"); this.radio("r_boss", 5);
+  }
+  private removeBoss() {
+    if (this.boss) { this.scene.remove(this.boss.mesh); this.boss = null; }
+    if (this.boss2) { this.scene.remove(this.boss2.mesh); this.boss2 = null; }
+    for (const c of this.crates) this.scene.remove(c.mesh);
+    this.crates = [];
+  }
 
   private updateBoss(dt: number) {
-    const b = this.boss; if (!b) return;
+    for (const b of [this.boss, this.boss2]) if (b) this.updateOneBoss(b, dt);
+    this.updateCrates(dt);
+  }
+  private updateOneBoss(b: Boss, dt: number) {
     const p = this.player;
     if (b.pos.distanceTo(b.target) < 60 || b.pos.distanceTo(p.pos) > TETHER) b.target.copy(p.pos).add(new THREE.Vector3((Math.random() - 0.5) * 300, 70, (Math.random() - 0.5) * 300));
     const desired = b.target.clone().sub(b.pos).normalize();
@@ -626,8 +762,8 @@ export class Engine {
     b.dropTimer -= dt; b.hitCooldown -= dt;
     if (b.dropTimer <= 0) {
       b.dropTimer = 8;
-      const e = this.spawnEnemy(true, "fighter", null, b.pos.clone().add(new THREE.Vector3(0, -12, 0)));
-      e.speed = 26;
+      if (getLevel().boss === "lifter") this.dropCrate(b.pos.clone().add(new THREE.Vector3(0, -12, 0)));
+      else { const e = this.spawnEnemy(true, "fighter", null, b.pos.clone().add(new THREE.Vector3(0, -12, 0))); e.speed = 26; }
     }
     const pulse = 0.8 + 0.2 * Math.sin(this.time * 6);
     for (const w of b.weakPoints) w.scale.setScalar(pulse);
@@ -646,11 +782,39 @@ export class Engine {
           if (b.hp <= 0) {
             this.fx.shred(b.parts, b.mesh, 2.5);
             this.feed(1000, 1, "boss", b.pos);
-            this.removeBoss();
-            this.sound?.music.play("play");
+            if (b === this.boss) { this.scene.remove(b.mesh); this.boss = null; } else { this.scene.remove(b.mesh); this.boss2 = null; }
+            if (!this.boss && !this.boss2) { this.removeBoss(); this.sound?.music.play("play"); }
           }
           break;
         }
+      }
+    }
+  }
+
+  private dropCrate(at: THREE.Vector3) {
+    const g = new THREE.Group();
+    const box = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), new THREE.MeshLambertMaterial({ color: 0x8a6f4a, flatShading: true }));
+    const band = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.5, 3.2), new THREE.MeshLambertMaterial({ color: 0xffd84a, flatShading: true }));
+    const chute = new THREE.Mesh(new THREE.SphereGeometry(2.4, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0xf3e7d2, flatShading: true, side: THREE.DoubleSide }));
+    chute.position.y = 4; g.add(box, band, chute);
+    g.position.copy(at);
+    this.scene.add(g);
+    this.crates.push({ mesh: g, pos: g.position, v: new THREE.Vector3((Math.random() - 0.5) * 2, -4, (Math.random() - 0.5) * 2) });
+  }
+  private updateCrates(dt: number) {
+    const p = this.player;
+    const mouth = p.pos.clone().addScaledVector(FWD.clone().applyQuaternion(p.q), 4.5);
+    for (let i = this.crates.length - 1; i >= 0; i--) {
+      const c = this.crates[i];
+      c.pos.addScaledVector(c.v, dt);
+      c.mesh.rotation.y += dt * 0.6;
+      const gh = groundHeight(c.pos.x, c.pos.z);
+      if (c.pos.y < gh + 1.5) c.pos.y = gh + 1.5;
+      if (mouth.distanceTo(c.pos) < 7) {
+        this.scene.remove(c.mesh); this.crates.splice(i, 1);
+        this.score += 100; this.hunger = Math.min(1, this.hunger + 0.25);
+        this.showMsg("SUPPLY SNACK +100"); this.sound?.chomp("fighter", 1);
+        this.fx.burst(c.pos, [0x8a6f4a, 0xffd84a], 8, 0.5);
       }
     }
   }
@@ -718,10 +882,12 @@ export class Engine {
       p.speed += (targetSpeed - p.speed) * 0.9 * dt;
       const f = FWD.clone().applyQuaternion(p.q);
       p.pos.addScaledVector(f, p.speed * dt);
-      p.pos.addScaledVector(this.wind, dt * 0.6);
+      const gust = getLevel().gimmick === "gusts" ? 0.6 + 0.9 * Math.sin(this.time * 0.35) : 0.6;
+      p.pos.addScaledVector(this.wind, dt * gust);
       p.pos.y -= (1 - Math.min(1, p.speed / 30)) * 10 * dt;
 
-      if (water && p.pos.y - gh < 4 && p.speed > 30) this.emitDust(dt, 1.5, "splash");
+      if (water && p.pos.y - gh < 4 && p.speed > 30 && !getLevel().lava) this.emitDust(dt, 1.5, "splash");
+      if (getLevel().gimmick === "volcano" && gh > 60 && p.pos.y - gh < 60) p.pos.y += 8 * dt; // thermal updrafts over the cone
 
       // wingtips + nose: a real crash if you plough in nose-down or fast; a bounce if you merely skim
       const pr = RIGHT.clone().applyQuaternion(p.q).multiplyScalar(6);
@@ -731,7 +897,8 @@ export class Engine {
       if (p.pos.y < gh + 1.7) {
         p.pos.y = gh + 1.7;
         this.touchedGroundThisWave = true;
-        const landing = p.speed < 28 || (onRunway && p.speed < 40);
+        if (water && getLevel().lava) { this.crashPlayer(); return; }
+      const landing = p.speed < 28 || (onRunway && p.speed < 40);
         if (landing) {
           p.state = "rolling"; this.shake = Math.max(this.shake, 0.3); this.sound?.thud(0.25); if (onRunway) { this.sound?.screech(); this.radio("r_land", 30); }
           this.input.rumble(0.5, 0.5, 200);
@@ -937,15 +1104,16 @@ export class Engine {
       this.touchedGroundThisWave = false;
       this.wave++; this.waveTimer = WAVE_TIME;
       this.waveBanner = `WAVE ${this.wave}`; this.waveBannerTimer = 2.5; this.sound?.horn(); this.radio("r_wave", 10);
-      if (this.wave % 3 === 0 && !this.boss) this.spawnBoss();
+      if (this.wave % getLevel().bossEvery === 0 && !this.boss) this.spawnBoss();
     }
     if (this.timeLeft <= 0 && this.wipeDir === 0) this.wipe(() => this.finish());
 
     // day cycle + weather
-    const prog = 1 - this.timeLeft / ROUND_TIME;
+    const prog = 1 - this.timeLeft / getLevel().roundTime;
     const rainTarget = this.rainy ? THREE.MathUtils.smoothstep(prog, 0.2, 0.45) * (1 - THREE.MathUtils.smoothstep(prog, 0.75, 0.95)) : 0;
     this.rainLevel = THREE.MathUtils.lerp(this.rainLevel, rainTarget, dt * 0.5);
     this.rain.intensity = this.rainLevel;
+    (this.rain.mesh.material as THREE.MeshBasicMaterial).color.setHex(getLevel().gimmick === "volcano" ? 0x54423a : 0xcfe0f0);
     this.sky.blend(this.timeOfDay, this.nextTod, prog, this.rainLevel);
     (this.world.water.material as THREE.MeshPhongMaterial).shininess = 90 + this.rainLevel * 120;
     this.world.leaves.color.setHex(0x2e8b3a).lerp(new THREE.Color(0x16321f), 1 - Math.min(1, this.sky.sun.intensity / 1.4));
@@ -974,10 +1142,11 @@ export class Engine {
     const done = this.objectives.filter((o) => o.done).length;
     const medal = done === 2 ? (this.score >= 1500 ? "gold" : "silver") : done === 1 ? (this.score >= 1000 ? "silver" : "bronze") : this.score >= 800 ? "bronze" : "none";
     const before = store.get().progress.totalEaten;
+    const stars = starsFor(medal, done);
     store.finishRound({
       score: this.score, eaten: this.eaten, eatenByKind: { ...this.eatenByKind }, bestCombo: this.bestCombo, firstBite: this.firstBite,
       objectives: this.objectives.map((o) => ({ ...o })), medal, dateKey: this.dateKey,
-    });
+    }, getLevel().id, stars);
     const after = store.get().progress.totalEaten;
     const unlocked = LIVERIES.find((l) => l.unlockAt > before && l.unlockAt <= after);
     if (unlocked) store.set({ round: { ...store.get().round, unlocked: unlocked.name } });
@@ -989,6 +1158,7 @@ export class Engine {
     const f = FWD.clone().applyQuaternion(p.q);
     const fh = f.clone().setY(0).normalize(), rh = new THREE.Vector3(-fh.z, 0, fh.x);
     const radar: RadarBlip[] = [], alerts: Alert[] = [], targets: Target[] = [];
+    const dark = getLevel().gimmick === "dark";
     type Contact = { ref: object; pos: THREE.Vector3; fwd: THREE.Vector3; kind: EnemyKind | "boss"; alert: boolean; hurt: boolean };
     const contacts: Contact[] = this.enemies.map((e) => ({ ref: e, pos: e.pos, fwd: FWD.clone().applyQuaternion(e.q), kind: e.kind, alert: e.alertTimer > 0, hurt: e.hp < KINDS[e.kind].hp }));
     if (this.boss) contacts.push({ ref: this.boss, pos: this.boss.pos, fwd: FWD.clone().applyQuaternion(this.boss.q), kind: "boss", alert: false, hurt: false });
@@ -1028,7 +1198,7 @@ export class Engine {
         const m = 0.86 / Math.max(Math.abs(ax), Math.abs(ay));
         x = THREE.MathUtils.clamp(50 + ax * m * 50, 6, 94); y = THREE.MathUtils.clamp(50 + ay * m * 50, 10, 88);
       }
-      targets.push({ x, y, onScreen, angle, dist: Math.round(d), dAlt, kind, locked: c === lock });
+      if (!dark || d < 320 || c === lock) targets.push({ x, y, onScreen, angle, dist: Math.round(d), dAlt, kind, locked: c === lock });
       if (c.alert && onScreen) alerts.push({ x, y, text: c.hurt ? "OW!" : "!" });
     }
     let compassAngle = 0, lockPitch = 0;
@@ -1069,6 +1239,13 @@ export class Engine {
   private tick(realDt: number, render: boolean) {
     this.clock += realDt;
     const now = this.clock * 1000;
+    // the wipe can change the phase (its action fires startRound/finish) — progress it BEFORE reading the phase,
+    // otherwise this frame still runs the old scene, which can teleport the player (title turntable) after a reset
+    if (this.wipeDir !== 0) {
+      this.wipeT += realDt * this.wipeDir / 0.32;
+      if (this.wipeDir > 0 && this.wipeT >= 1) { this.wipeT = 1; this.wipeAction?.(); this.wipeAction = null; this.wipeDir = -1; }
+      else if (this.wipeDir < 0 && this.wipeT <= 0) { this.wipeT = 0; this.wipeDir = 0; }
+    }
     const phase = store.get().phase;
     const opts = store.get().options;
     this.input.update(realDt, opts);
@@ -1092,11 +1269,6 @@ export class Engine {
       this.rain.update(realDt, this.camera.position, this.wind);
     }
 
-    if (this.wipeDir !== 0) {
-      this.wipeT += realDt * this.wipeDir / 0.32;
-      if (this.wipeDir > 0 && this.wipeT >= 1) { this.wipeT = 1; this.wipeAction?.(); this.wipeAction = null; this.wipeDir = -1; }
-      else if (this.wipeDir < 0 && this.wipeT <= 0) { this.wipeT = 0; this.wipeDir = 0; }
-    }
     if (this.input.consumePause()) {
       if (phase === "playing") { this.pause(); return; }
       if (phase === "paused") { this.resume(); return; }
@@ -1165,7 +1337,8 @@ export class Engine {
       this.renderer.clear();
       this.post.render(this.scene, this.camera);
       const menuMain = store.get().menuPage === "main";
-      const mode = phase === "playing" || phase === "countdown" ? "game" : phase === "intro" ? "intro" : phase === "paused" ? "pause" : phase === "title" && menuMain ? "title" : "none";
+      const menuPage = store.get().menuPage;
+      const mode = phase === "playing" || phase === "countdown" ? "game" : phase === "intro" ? "intro" : phase === "paused" ? "pause" : phase === "title" && (menuMain || menuPage === "levels") ? "title" : "none";
       this.hud3d.setMode(mode);
       if (mode === "game") {
         const o = store.get().options;
@@ -1180,10 +1353,14 @@ export class Engine {
         else this.hud3d.setMode("none");
       } else if (mode === "title") {
         const pr = store.get().progress;
-        this.hud3d.updateMenu(realDt, "title", this.menuItems(), this.menuHover, {
-          tagline: `${tr("tagline")} ${tr("eatThem")}`,
-          progress: pr.totalEaten > 0 ? `${pr.bestScore > 0 ? `BEST ${pr.bestScore} · ` : ""}${pr.totalEaten} PLANES EATEN · ${pr.medals} MEDALS` : "",
-        });
+        if (menuPage === "levels") {
+          this.hud3d.updateMenu(realDt, "levels", this.menuItems(), this.menuHover, { tagline: `PICK YOUR HUNTING GROUND · ${store.totalStars()}★` });
+        } else {
+          this.hud3d.updateMenu(realDt, "title", this.menuItems(), this.menuHover, {
+            tagline: `${tr("tagline")} ${tr("eatThem")}`,
+            progress: pr.totalEaten > 0 ? `${pr.bestScore > 0 ? `BEST ${pr.bestScore} · ` : ""}${pr.totalEaten} PLANES EATEN · ${pr.medals} MEDALS · ${store.totalStars()}★` : "",
+          });
+        }
       }
       this.hud3d.updateWipe(Math.max(0, Math.min(1, this.wipeT)));
       if (mode !== "none" || this.wipeT > 0) {

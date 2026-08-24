@@ -48,6 +48,14 @@ jobs:
       - run: npm run e2e
         env:
           CHROME: ${{ steps.chrome.outputs.chrome-path }}
+          LEVEL: fjord
+      - run: npm run e2e
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}
+          LEVEL: caldera
+      - run: npm run e2e
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}
           MOBILE: "1"
           SHOT_DIR: shots
       - uses: actions/upload-artifact@v4

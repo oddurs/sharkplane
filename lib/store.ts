@@ -2,6 +2,8 @@ import { useSyncExternalStore } from "react";
 
 export type Phase = "title" | "intro" | "countdown" | "playing" | "paused" | "roundOver";
 
+export type LevelRecord = { bestScore: number; stars: number; medals: number; sorties: number; bestCombo: number };
+
 export type Options = {
   invertY: boolean; // true = flight-stick: pull back (S/↓) to climb
   sensitivity: number; // 0.5 .. 2
@@ -27,7 +29,7 @@ export type Options = {
 
 export type Objective = { id: string; text: string; target: number; progress: number; done: boolean };
 
-export type Progress = { totalEaten: number; medals: number; sorties: number; bestScore: number };
+export type Progress = { totalEaten: number; medals: number; sorties: number; bestScore: number; levels: Record<string, LevelRecord> };
 
 export type RadarBlip = { x: number; y: number; kind: EnemyKind; dAlt: number; heading: number; locked: boolean };
 export type EnemyKind = "fighter" | "bomber" | "escort";
@@ -104,7 +106,9 @@ export type State = {
   hud: Hud;
   round: RoundStats;
   progress: Progress;
-  menuPage: "main" | "controls" | "options";
+  menuPage: "main" | "levels" | "controls" | "options";
+  levelId: string; // the level being played / selected
+  daily: boolean; // current run is the daily sortie
 };
 
 const OPTIONS_KEY = "sharkplane.options";
@@ -118,7 +122,7 @@ const defaultOptions: Options = {
   scheme: "anywhere", autoThrottle: true, tiltInvert: false,
   music: 0.8, sfx: 1, ui: 0.8, captions: false, reducedMotion: false, highContrast: false, lang: "en", tutorialDone: false, qualitySet: false,
 };
-const defaultProgress: Progress = { totalEaten: 0, medals: 0, sorties: 0, bestScore: 0 };
+const defaultProgress: Progress = { totalEaten: 0, medals: 0, sorties: 0, bestScore: 0, levels: {} };
 const emptyRound: RoundStats = {
   score: 0, eaten: 0, eatenByKind: { fighter: 0, bomber: 0, escort: 0, boss: 0 }, bestCombo: 0, firstBite: null,
   objectives: [], medal: "none", dateKey: "", highScore: 0, isHighScore: false, unlocked: null,
@@ -162,6 +166,8 @@ let state: State = {
   round: emptyRound,
   progress: defaultProgress,
   menuPage: "main",
+  levelId: "bay",
+  daily: false,
 };
 
 const listeners = new Set<() => void>();
@@ -195,20 +201,32 @@ export const store = {
     save(PROGRESS_KEY, progress);
     store.set({ progress });
   },
-  finishRound(stats: Omit<RoundStats, "highScore" | "isHighScore" | "unlocked">) {
+  finishRound(stats: Omit<RoundStats, "highScore" | "isHighScore" | "unlocked">, levelId: string, stars: number) {
     const prev = load<number>(HIGH_KEY, 0);
     const isHighScore = stats.score > prev;
     if (isHighScore) save(HIGH_KEY, stats.score);
     const before = state.progress;
+    const lv = before.levels[levelId] ?? { bestScore: 0, stars: 0, medals: 0, sorties: 0, bestCombo: 0 };
     const progress: Progress = {
       totalEaten: before.totalEaten + stats.eaten,
       medals: before.medals + (stats.medal === "none" ? 0 : 1),
       sorties: before.sorties + 1,
       bestScore: Math.max(before.bestScore, stats.score),
+      levels: {
+        ...before.levels,
+        [levelId]: {
+          bestScore: Math.max(lv.bestScore, stats.score),
+          stars: Math.max(lv.stars, stars),
+          medals: lv.medals + (stats.medal === "none" ? 0 : 1),
+          sorties: lv.sorties + 1,
+          bestCombo: Math.max(lv.bestCombo, stats.bestCombo),
+        },
+      },
     };
     save(PROGRESS_KEY, progress);
     store.set({ phase: "roundOver", progress, round: { ...stats, highScore: Math.max(prev, stats.score), isHighScore, unlocked: null } });
   },
+  totalStars(): number { return Object.values(state.progress.levels).reduce((a, l) => a + l.stars, 0); },
   subscribe(l: () => void) {
     listeners.add(l);
     return () => { listeners.delete(l); };

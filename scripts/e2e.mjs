@@ -54,6 +54,7 @@ const key = async (code) => { await keyEvent("keyDown", code); await keyEvent("k
 await send("Runtime.enable");
 await send("Page.enable");
 const MOBILE = !!process.env.MOBILE;
+const LEVEL = process.env.LEVEL || "bay";
 if (MOBILE) {
   await send("Emulation.setDeviceMetricsOverride", { width: 844, height: 390, deviceScaleFactor: 2, mobile: true, screenOrientation: { type: "landscapePrimary", angle: 90 } });
   await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
@@ -66,10 +67,12 @@ const checks = [];
 const check = (name, ok) => { checks.push([name, !!ok]); console.log(`${ok ? "✓" : "✗"} ${name}`); };
 
 await js(`localStorage.setItem('sharkplane.options', JSON.stringify({ quality: 'low', qualitySet: true, tutorialDone: true, touch: ${MOBILE}, scheme: 'anywhere', autoThrottle: true }))`);
+await js(`localStorage.setItem('sharkplane.progress', JSON.stringify({ totalEaten: 60, medals: 6, sorties: 9, bestScore: 5000, levels: { bay: { bestScore: 5000, stars: 3, medals: 3, sorties: 3, bestCombo: 5 }, fjord: { bestScore: 1, stars: 3, medals: 1, sorties: 1, bestCombo: 1 }, dunes: { bestScore: 1, stars: 3, medals: 1, sorties: 1, bestCombo: 1 }, harbor: { bestScore: 1, stars: 3, medals: 1, sorties: 1, bestCombo: 1 } } }))`); // every level unlocked for the matrix
 await js(`location.reload()`); await sleep(5000);
 check("title renders in 3-D", await js(`window.__game.engine.hud3d['menuGroup'].visible`));
 check("engine exposed with ?debug", await js(`typeof window.__game === 'object'`));
-await js(`window.__game.engine.menuAction('sortie')`); await sleep(300);
+await js(`window.__game.engine.menuAction('level:${LEVEL}')`); await sleep(300);
+await js(`window.__game.engine.advance(1.2)`); await sleep(300); // carry the jaw-wipe into the intro
 await key("KeyX"); await sleep(200);
 const adv = async (s) => { await js(`window.__game.engine.advance(${s})`); await sleep(150); };
 await adv(4);

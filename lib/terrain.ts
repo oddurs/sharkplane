@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { getLevel } from "./levels";
 
 export const WORLD_RADIUS = 1400;
 /** Runway strip: centred on x=0, runs along z. */
@@ -14,22 +15,10 @@ function runwayPadDistance(x: number, z: number) {
   return Math.hypot(dx, dz);
 }
 
-/** Raw terrain height; negative = sea bed (water surface is y=0). */
+/** Raw terrain height for the active level; negative = sea bed (water surface is y=0). */
 export function terrainHeight(x: number, z: number): number {
-  // continents
-  const m = Math.sin(x * 0.0023 + 1.3) * Math.cos(z * 0.0019 - 0.4) + 0.55 * Math.sin(x * 0.0041 - z * 0.0037 + 0.7);
-  // detail
-  const d =
-    Math.sin(x * 0.011) * Math.cos(z * 0.009) +
-    0.5 * Math.sin(x * 0.027 + z * 0.019) +
-    0.25 * Math.sin(z * 0.05 - x * 0.031);
-  let h = m * 38 + d * 16 - 4;
-  // cliffs: steepen the band just above the beach
-  if (h > 6) h += 8 * THREE.MathUtils.smoothstep(h, 6, 18);
-  // the peak
-  const pd = Math.hypot(x - PEAK.x, z - PEAK.z);
-  h += 150 * Math.exp(-(pd * pd) / (2 * 190 * 190));
-  // airfield pad (flat grass at y=0.5 so the runway sits on dry land)
+  let h = getLevel().height(x, z);
+  // airfield pad (flat grass at y=0.5 so the runway sits on dry land) — every level has the same home strip
   const pad = 1 - THREE.MathUtils.smoothstep(runwayPadDistance(x, z), 0, 260);
   h = THREE.MathUtils.lerp(h, 0.5, pad);
   return Math.max(-14, h);
@@ -66,17 +55,7 @@ export function buildWorld(scene: THREE.Scene, detail: Detail = DETAIL.high): Wo
       pos.setY(i + k, h);
       avg += h / 3;
     }
-    if (avg < -7) c.set(0x174a85);
-    else if (avg < -3) c.set(0x1f5fa8);
-    else if (avg < -0.35) c.set(0x3d86c9);
-    else if (avg < 0.2) c.set(0xfff6dc); // foam line where the sea meets the sand
-    else if (avg < 0.8) c.set(0xe8d9a0);
-    else if (avg < 4) c.set(0xd9c77a);
-    else if (avg < 28) c.set(0x5fae3f);
-    else if (avg < 55) c.set(0x3f8a3a);
-    else if (avg < 95) c.set(0x8a6f4a);
-    else if (avg < 125) c.set(0x6f6a66);
-    else c.set(0xf4f4f8);
+    c.set(getLevel().band(avg));
     // a little per-face variation so big flats don't band
     const v = 0.94 + ((i * 7919) % 13) / 100;
     c.multiplyScalar(v);
@@ -114,7 +93,10 @@ export function buildWorld(scene: THREE.Scene, detail: Detail = DETAIL.high): Wo
 function buildWater(scene: THREE.Scene, seg: number) {
   const g = new THREE.PlaneGeometry(3400, 3400, seg, seg);
   g.rotateX(-Math.PI / 2);
-  const m = new THREE.MeshPhongMaterial({ color: 0x2f86d8, specular: 0xffffff, shininess: 90, flatShading: true, transparent: true, opacity: 0.92 });
+  const lava = !!getLevel().lava;
+  const m = lava
+    ? new THREE.MeshLambertMaterial({ color: 0xff7a1a, emissive: 0xd93a10, flatShading: true })
+    : new THREE.MeshPhongMaterial({ color: 0x2f86d8, specular: 0xffffff, shininess: 90, flatShading: true, transparent: true, opacity: 0.92 });
   const water = new THREE.Mesh(g, m);
   water.position.y = -0.75; // ripples (±0.6) never rise above the sand band at y≥0
   water.receiveShadow = true;

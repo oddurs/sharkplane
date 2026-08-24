@@ -3,6 +3,7 @@
 import { useEffect, useState, type RefObject } from "react";
 import type { Engine } from "@/lib/engine";
 import { LIVERIES } from "@/lib/models";
+import { LEVELS } from "@/lib/levels";
 import { store, useGame, type Options } from "@/lib/store";
 import { t, LANGS } from "@/lib/i18n";
 import { Tilt } from "@/lib/input";
@@ -17,6 +18,7 @@ export default function Menus({ engine }: { engine: RefObject<Engine | null> }) 
 
   const back = () => { engine.current?.ui("back"); store.set({ menuPage: "main" }); };
   const body =
+    page === "levels" ? <Mirror ids={[...LEVELS.map((l) => `level:${l.id}`), "daily", "back"]} labels={[...LEVELS.map((l) => l.name), "Daily sortie", t("back")]} /> :
     page === "controls" ? <Controls onBack={back} /> :
     page === "options" ? <OptionsPage onBack={back} engine={engine} /> :
     phase === "title" ? <Title /> :
@@ -25,12 +27,12 @@ export default function Menus({ engine }: { engine: RefObject<Engine | null> }) 
 
   // Title and pause main menus render in 3-D (lib/ui/hud3d.ts); this invisible mirror keeps them
   // keyboard-navigable and visible to screen readers. Focusing a mirror button lights its 3-D twin.
-  function Mirror({ ids }: { ids: string[] }) {
+  function Mirror({ ids, labels }: { ids: string[]; labels?: string[] }) {
     return (
       <div className="menu-mirror" role="menu" aria-label="Game menu">
         {ids.map((id, i) => (
           <button key={id} autoFocus={i === 0} onFocus={() => e().setMenuHover(id)} onBlur={() => e().setMenuHover("")} onClick={() => e().menuAction(id)}>
-            {t(id as Parameters<typeof t>[0])}
+            {labels?.[i] ?? t(id as Parameters<typeof t>[0])}
           </button>
         ))}
       </div>
@@ -80,7 +82,7 @@ export default function Menus({ engine }: { engine: RefObject<Engine | null> }) 
   }
 
   return (
-    <div id="menu" className={`${phase === "paused" ? "dim" : ""} ${page === "main" && (phase === "title" || phase === "paused") ? "passthrough" : ""}`} onMouseOver={(ev) => { if ((ev.target as HTMLElement).tagName === "BUTTON" && page !== "main") engine.current?.ui("hover"); }}>
+    <div id="menu" className={`${phase === "paused" ? "dim" : ""} ${(page === "main" || page === "levels") && (phase === "title" || phase === "paused") ? "passthrough" : ""}`} onMouseOver={(ev) => { if ((ev.target as HTMLElement).tagName === "BUTTON" && page !== "main") engine.current?.ui("hover"); }}>
       <div className="panel">{body}</div>
     </div>
   );

@@ -74,7 +74,7 @@ export class Hud3D {
   // 3-D menus (title / pause)
   private menuGroup = new THREE.Group();
   private wordmark: Plate; private tagline: Plate; private progressLine: Plate;
-  private buttons: { plate: Plate; hover: Spring; id: string }[] = [];
+  private buttons: { plate: Plate; sub: Label; hover: Spring; id: string }[] = [];
   private raycaster = new THREE.Raycaster();
 
   constructor() {
@@ -199,11 +199,12 @@ export class Hud3D {
     this.tagline = new Plate(620, 40, "cream", { size: 17, color: "#1b2a44", font: "body" }, 8, 0.03);
     this.progressLine = new Plate(420, 30, "ink", { size: 13, color: "#8a96a8", font: "body" }, 6, 0.03);
     this.menuGroup.add(this.wordmark, this.tagline, this.progressLine);
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
       const plate = new Plate(340, 58, "ink", { size: 24, color: "#fff" }, 16, 0.06);
       plate.body.userData.menuIndex = i;
+      const sub = new Label({ size: 12, color: "#8ad8ff", font: "body" }); sub.position.set(0, -19, 23); plate.add(sub);
       this.menuGroup.add(plate);
-      this.buttons.push({ plate, hover: new Spring(0), id: "" });
+      this.buttons.push({ plate, sub, hover: new Spring(0), id: "" });
     }
     this.menuGroup.visible = false; this.scene.add(this.menuGroup);
 
@@ -398,30 +399,34 @@ export class Hud3D {
   }
 
   /** Lay out and animate the 3-D menu buttons. hoverId highlights; returns nothing. */
-  updateMenu(dt: number, mode: "title" | "pause", items: { id: string; label: string; primary?: boolean }[], hoverId: string, extras: { tagline?: string; progress?: string }) {
+  updateMenu(dt: number, mode: "title" | "pause" | "levels", items: { id: string; label: string; primary?: boolean; sub?: string; locked?: boolean }[], hoverId: string, extras: { tagline?: string; progress?: string }) {
     this.t += dt;
     const s = this.ui, H = this.h;
-    const isTitle = mode === "title";
+    const isTitle = mode === "title" || mode === "levels";
     this.wordmark.visible = this.tagline.visible = this.progressLine.visible = isTitle;
     if (isTitle) {
-      this.wordmark.setText("SHARKPLANE"); this.wordmark.tick(dt);
-      this.wordmark.position.set(0, H * 0.22, 60); this.wordmark.scale.multiplyScalar(s); this.wordmark.rotation.z = -0.03 + Math.sin(this.t * 0.8) * 0.008; this.wordmark.rotation.y = Math.sin(this.t * 0.5) * 0.05;
+      this.wordmark.setText(mode === "levels" ? "SORTIES" : "SHARKPLANE"); this.wordmark.tick(dt);
+      this.wordmark.position.set(0, mode === "levels" ? H * 0.36 : H * 0.22, 60); this.wordmark.scale.multiplyScalar(s * (mode === "levels" ? 0.62 : 1)); this.wordmark.rotation.z = -0.03 + Math.sin(this.t * 0.8) * 0.008; this.wordmark.rotation.y = Math.sin(this.t * 0.5) * 0.05;
       this.tagline.setText(extras.tagline ?? ""); this.tagline.tick(dt);
-      this.tagline.position.set(0, H * 0.22 - 92 * s, 40); this.tagline.scale.multiplyScalar(s); this.tagline.rotation.z = 0.012;
+      this.tagline.position.set(0, (mode === "levels" ? H * 0.36 : H * 0.22) - (mode === "levels" ? 64 : 92) * s, 40); this.tagline.scale.multiplyScalar(s); this.tagline.rotation.z = 0.012;
       this.progressLine.visible = !!extras.progress;
       if (extras.progress) { this.progressLine.setText(extras.progress); this.progressLine.tick(dt); this.progressLine.position.set(0, H * 0.22 - 92 * s - (items.length * 66 + 60) * s, 30); this.progressLine.scale.multiplyScalar(s * 0.9); }
     }
-    const top = isTitle ? H * 0.22 - 150 * s : H / 2 - 200 * s;
+    const compact = mode === "levels";
+    const step = (compact ? 64 : 66) * s;
+    const top = compact ? H * 0.36 - 118 * s : isTitle ? H * 0.22 - 150 * s : H / 2 - 200 * s;
     items.forEach((it, i) => {
       const b = this.buttons[i]; if (!b) return;
       b.plate.visible = true; b.id = it.id;
       b.hover.target = hoverId === it.id ? 1 : 0;
       const hv = b.hover.update(dt);
       b.plate.setText(it.label); b.plate.tick(dt);
-      b.plate.body.material = mat(it.primary ? (hoverId === it.id ? "white" : "yellow") : hoverId === it.id ? "orange" : "ink");
-      if (b.plate.label) b.plate.label.material.color.set(it.primary ? 0x1b2a44 : 0xffffff);
-      b.plate.position.set(Math.sin(this.t * 1.1 + i) * 3 * (1 - hv), top - i * 66 * s, 40 + hv * 30);
-      b.plate.scale.multiplyScalar(s * (1 + hv * 0.07));
+      b.plate.body.material = mat(it.locked ? "inkDark" : it.primary ? (hoverId === it.id ? "white" : "yellow") : hoverId === it.id ? "orange" : "ink");
+      if (b.plate.label) b.plate.label.material.color.set(it.locked ? 0x8a96a8 : it.primary ? 0x1b2a44 : 0xffffff);
+      b.sub.set(it.sub ?? "");
+      b.plate.label?.position.setY(it.sub ? 8 : 0); // Label manages its own scale — never override it
+      b.plate.position.set(Math.sin(this.t * 1.1 + i) * 3 * (1 - hv), top - i * step, 40 + hv * 30);
+      b.plate.scale.multiplyScalar(s * (1 + hv * 0.07) * (compact ? 0.94 : 1));
       b.plate.rotation.z = (i % 2 ? 0.012 : -0.015) - hv * 0.02;
       b.plate.rotation.y = Math.sin(this.t * 0.7 + i * 1.3) * 0.04 + hv * 0.08;
     });

@@ -18,11 +18,13 @@ describe("store", () => {
   it("tracks high score and progress across rounds", async () => {
     const { store } = await import("@/lib/store");
     store.hydrate();
-    store.finishRound({ score: 500, eaten: 3, eatenByKind: { fighter: 3, bomber: 0, escort: 0, boss: 0 }, bestCombo: 2, firstBite: 4, objectives: [], medal: "none", dateKey: "2026-08-23" });
+    store.finishRound({ score: 500, eaten: 3, eatenByKind: { fighter: 3, bomber: 0, escort: 0, boss: 0 }, bestCombo: 2, firstBite: 4, objectives: [], medal: "none", dateKey: "2026-08-23" }, "bay", 0);
     expect(store.get().round.isHighScore).toBe(true);
-    store.finishRound({ score: 200, eaten: 1, eatenByKind: { fighter: 1, bomber: 0, escort: 0, boss: 0 }, bestCombo: 1, firstBite: 9, objectives: [], medal: "bronze", dateKey: "2026-08-23" });
+    store.finishRound({ score: 200, eaten: 1, eatenByKind: { fighter: 1, bomber: 0, escort: 0, boss: 0 }, bestCombo: 1, firstBite: 9, objectives: [], medal: "bronze", dateKey: "2026-08-23" }, "bay", 1);
     expect(store.get().round.isHighScore).toBe(false);
     expect(store.get().round.highScore).toBe(500);
     expect(store.get().progress).toMatchObject({ totalEaten: 4, medals: 1, sorties: 2, bestScore: 500 });
+    expect(store.get().progress.levels.bay).toMatchObject({ bestScore: 500, stars: 1, sorties: 2 });
+    expect(store.totalStars()).toBe(1);
   });
 });
