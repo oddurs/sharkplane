@@ -71,6 +71,21 @@ await js(`localStorage.setItem('sharkplane.progress', JSON.stringify({ totalEate
 await js(`location.reload()`); await sleep(5000);
 check("title renders in 3-D", await js(`window.__game.engine.hud3d['menuGroup'].visible`));
 check("engine exposed with ?debug", await js(`typeof window.__game === 'object'`));
+// Real pointer events on the canvas — menuAction() alone would not catch unregistered listeners.
+const menuIds = () => js(`window.__game.engine.hud3d['buttons'].filter(b => b.plate.visible).map(b => b.id).join(',')`);
+const clickButton = async (id) => js(`(() => {
+  const e = window.__game.engine, b = e.hud3d['buttons'].find((x) => x.id === ${JSON.stringify(id)} && x.plate.visible);
+  if (!b) return false;
+  const v = b.plate.body.position.clone(); b.plate.body.getWorldPosition(v); v.project(e.hud3d.camera);
+  const x = (v.x * 0.5 + 0.5) * innerWidth, y = (-v.y * 0.5 + 0.5) * innerHeight;
+  const c = e.renderer.domElement;
+  c.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
+  c.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, bubbles: true }));
+  return true;
+})()`);
+check("SORTIE button is on the title menu", await clickButton("sortie"));
+await sleep(400);
+check("real mouse click on SORTIE opens level select", ((await menuIds()) ?? "").includes("level:bay"));
 await js(`window.__game.engine.menuAction('level:${LEVEL}')`); await sleep(300);
 await js(`window.__game.engine.advance(1.2)`); await sleep(300); // carry the jaw-wipe into the intro
 await key("KeyX"); await sleep(200);

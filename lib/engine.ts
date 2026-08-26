@@ -14,7 +14,7 @@ import { Rng, hashString, todayKey } from "./rng";
 import { BIG_MOMENT_QUIET, TIERS, type Tier as JuiceTier } from "./tuning";
 import { Fx as FxKit } from "./fx";
 import { store, type EnemyKind, type Alert, type RadarBlip, type Target, type Objective, type Options } from "./store";
-import { LEVELS, dailyLevel, getLevel, levelById, setLevel, starsFor } from "./levels";
+import { BOSS_BANNER, LEVELS, dailyLevel, getLevel, levelById, setLevel, starsFor } from "./levels";
 
 const FWD = new THREE.Vector3(0, 0, -1);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -166,6 +166,8 @@ export class Engine {
     this.hud3d = new Hud3D();
     this.renderer.autoClear = false;
     this.input = new Input(this.renderer.domElement);
+    this.renderer.domElement.addEventListener("pointermove", this.onMenuMove);
+    this.renderer.domElement.addEventListener("pointerdown", this.onMenuClick);
 
     this.rng = new Rng(hashString("sharkplane:" + todayKey()));
     this.birds = new Birds(this.worldGroup as unknown as THREE.Scene, this.rng);
@@ -721,7 +723,7 @@ export class Engine {
     if (kind === "rival") { this.spawnRival(); return; }
     this.boss = this.makeBossAt(0);
     if (kind === "twin") this.boss2 = this.makeBossAt(Math.PI * 0.5);
-    this.waveBanner = kind === "twin" ? "TWO ZEPPELINS SIGHTED" : kind === "lifter" ? "CARGO LIFTER SIGHTED" : "ZEPPELIN SIGHTED";
+    this.waveBanner = BOSS_BANNER[kind];
     this.waveBannerTimer = 3; this.sound?.horn(); this.sound?.music.play("boss"); this.radio("r_boss", 5);
   }
   private spawnRivalBody() {

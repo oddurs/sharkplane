@@ -8,6 +8,14 @@ import * as THREE from "three";
 export type BossKind = "zeppelin" | "twin" | "lifter" | "blimp" | "rival";
 export type Gimmick = "none" | "gusts" | "convoy" | "dark" | "volcano";
 
+/** Boss sighting banners. The rival announces itself separately — it arrives in stages. */
+export const BOSS_BANNER: Record<Exclude<BossKind, "rival">, string> = {
+  zeppelin: "ZEPPELIN SIGHTED",
+  twin: "TWO ZEPPELINS SIGHTED",
+  lifter: "CARGO LIFTER SIGHTED",
+  blimp: "SEARCHLIGHT BLIMP SIGHTED",
+};
+
 export type LevelDef = {
   id: string;
   name: string;
@@ -25,7 +33,7 @@ export type LevelDef = {
   boss: BossKind;
   roundTime: number;
   gimmick: Gimmick;
-  /** Total stars required to unlock. */
+  /** Total stars required to unlock (0/1/3/5/7). Every gate is clearable at a 2-star pace — never near-perfection. */
   unlockStars: number;
 };
 
@@ -106,26 +114,26 @@ export const LEVELS: readonly LevelDef[] = [
     id: "fjord", name: "Fjord Run", tagline: "Thread the canyons. Mind the crosswind.",
     height: fjordHeight, band: fjordBand, times: ["dawn", "noon", "dusk"], rainChance: 0.45,
     waves: { base: 8, perWave: 2, bomberFrom: 2, escortFrom: 2, enemySpeed: 1.05 },
-    bossEvery: 3, boss: "twin", roundTime: 180, gimmick: "gusts", unlockStars: 2,
+    bossEvery: 3, boss: "twin", roundTime: 180, gimmick: "gusts", unlockStars: 1,
   },
   {
     id: "dunes", name: "Dune Sea", tagline: "Cargo convoys, nowhere to hide.",
     height: duneHeight, band: duneBand, times: ["dawn", "noon", "sunset"], rainChance: 0,
     waves: { base: 7, perWave: 3, bomberFrom: 1, escortFrom: 4, enemySpeed: 1 },
-    bossEvery: 3, boss: "lifter", roundTime: 180, gimmick: "convoy", unlockStars: 5,
+    bossEvery: 3, boss: "lifter", roundTime: 180, gimmick: "convoy", unlockStars: 3,
   },
   {
     id: "harbor", name: "Midnight Harbor", tagline: "They can't see you. You can't see them.",
     height: harborHeight, band: harborBand, times: ["dusk"], rainChance: 0.35,
     waves: { base: 9, perWave: 2, bomberFrom: 2, escortFrom: 3, enemySpeed: 1.05 },
-    bossEvery: 3, boss: "blimp", roundTime: 180, gimmick: "dark", unlockStars: 8,
+    bossEvery: 3, boss: "blimp", roundTime: 180, gimmick: "dark", unlockStars: 5,
   },
   {
     id: "caldera", name: "The Caldera", tagline: "Lava forgives nothing. Neither does the rival.",
     height: calderaHeight, band: calderaBand, times: ["sunset", "dusk"], rainChance: 0.5,
     lava: true,
     waves: { base: 9, perWave: 3, bomberFrom: 1, escortFrom: 2, enemySpeed: 1.15 },
-    bossEvery: 3, boss: "rival", roundTime: 210, gimmick: "volcano", unlockStars: 11,
+    bossEvery: 3, boss: "rival", roundTime: 210, gimmick: "volcano", unlockStars: 7,
   },
 ];
 

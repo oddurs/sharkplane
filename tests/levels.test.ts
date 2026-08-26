@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { LEVELS, dailyLevel, setLevel, starsFor } from "@/lib/levels";
+import { BOSS_BANNER, LEVELS, dailyLevel, setLevel, starsFor } from "@/lib/levels";
 import { terrainHeight, isOnRunway, RUNWAY } from "@/lib/terrain";
 
 describe("levels", () => {
@@ -41,6 +41,22 @@ describe("levels", () => {
     expect(wet / 400).toBeLessThan(0.05); // dune sea is dry
     setLevel(LEVELS[4]);
     expect(terrainHeight(-150, -500)).toBeLessThan(terrainHeight(-150, -500 + 220) - 20); // crater dips well below the rim
+  });
+
+  it("the unlock ladder is clearable at a 2-star pace", () => {
+    for (let i = 1; i < LEVELS.length; i++) {
+      const need = LEVELS[i].unlockStars;
+      expect(need, LEVELS[i].id).toBeGreaterThan(LEVELS[i - 1].unlockStars); // gates always advance
+      expect(need, LEVELS[i].id).toBeLessThanOrEqual(2 * i); // 2 stars per prior level is enough
+      expect(need, LEVELS[i].id).toBeLessThanOrEqual(3 * i - 2); // and never within a star of perfection
+    }
+  });
+
+  it("every boss kind has its own sighting banner", () => {
+    const kinds = new Set(LEVELS.map((l) => l.boss));
+    const banners = new Set([...kinds].map((k) => (k === "rival" ? "RIVAL SHARK INBOUND" : BOSS_BANNER[k])));
+    expect(banners.size, "each boss announces itself differently").toBe(kinds.size);
+    for (const b of banners) expect(b).toBeTruthy();
   });
 
   it("stars ladder and daily rotation behave", () => {
